@@ -1,0 +1,22 @@
+[Unit]
+# 안전 필수 프로세스. 이것만 살아 있으면 낙상 감지와 신고가 동작한다.
+Description=Walker fall detection (safety critical)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=walker
+WorkingDirectory=/opt/walker
+# 웹훅 URL / NTRIP 계정은 여기서만 넘긴다. 소스에 절대 적지 않는다.
+# systemd는 ~/.bashrc 를 읽지 않으므로 EnvironmentFile이 필수다.
+EnvironmentFile=/etc/walker/secrets.env
+# -u 필수: 파이썬 출력 버퍼링 때문에 크래시 직전 로그가 통째로 사라진다
+ExecStart=/opt/walker/venv/bin/python -u safety_monitor.py
+Restart=always
+RestartSec=2
+StandardOutput=append:/var/log/walker/fall.log
+StandardError=append:/var/log/walker/fall.log
+
+[Install]
+WantedBy=multi-user.target

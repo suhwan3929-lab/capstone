@@ -1,0 +1,12 @@
+# Project-local Python runtimes and virtual environments
+capstone_code/.venv/
+capstone_code/.python/
+
+# Python bytecode and test/runtime output
+__pycache__/
+*.py[cod]
+capstone_code/logs/
+
+# Machine-specific configuration and secrets
+capstone_code/config_local.py
+.env

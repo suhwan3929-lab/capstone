@@ -1,0 +1,881 @@
+{
+ "alerting.py": {
+  "funcs": [
+   "tipover_state_to_level(tipover_state)"
+  ],
+  "classes": [
+   [
+    "Alerter",
+    [
+     "start()",
+     "stop()",
+     "backend_name()",
+     "update()"
+    ]
+   ]
+  ],
+  "consts": [
+   "SILENT",
+   "SENSOR_FAULT",
+   "OBSTACLE_WARN",
+   "OBSTACLE_DANGER",
+   "TIPOVER_IMPACT",
+   "TIPOVER_ASK",
+   "TIPOVER_CONFIRMED",
+   "LEVEL_NAME"
+  ],
+  "imports": [
+   "config",
+   "threading",
+   "time"
+  ]
+ },
+ "battery.py": {
+  "funcs": [
+   "snapshot()",
+   "percent()",
+   "start(log_callback)",
+   "stop()",
+   "volts_to_percent(v_pack, cells)"
+  ],
+  "classes": [],
+  "consts": [
+   "_LI_CURVE"
+  ],
+  "imports": [
+   "config",
+   "os",
+   "subprocess",
+   "threading",
+   "time"
+  ]
+ },
+ "buttons.py": {
+  "funcs": [],
+  "classes": [
+   [
+    "ButtonHub",
+    [
+     "start()",
+     "stop()"
+    ]
+   ]
+  ],
+  "consts": [
+   "CMD_SOS"
+  ],
+  "imports": [
+   "config",
+   "states",
+   "sys",
+   "threading",
+   "time"
+  ]
+ },
+ "config.py": {
+  "funcs": [],
+  "classes": [],
+  "consts": [
+   "SIM_MODE",
+   "SIM_SCENARIO",
+   "LIDAR_SOURCE",
+   "IMU_PORT",
+   "IMU_BAUD",
+   "GPS_PORT",
+   "GPS_BAUD",
+   "LIDAR_PORT_LEFT",
+   "LIDAR_PORT_RIGHT",
+   "LIDAR_BAUD",
+   "STALE_IMU_SEC",
+   "STALE_GPS_SEC",
+   "STALE_LIDAR_SEC",
+   "IMPACT_THRESHOLD_G",
+   "TIPOVER_TILT_DEG",
+   "STABILIZE_TIME",
+   "CHECK_TIME",
+   "ASK_TIMEOUT",
+   "REARM_COOLDOWN",
+   "MOVE_ACCEL_TOL_G",
+   "MOVE_ANGLE_TOL_DEG",
+   "MOVE_GYRO_TOL_DPS",
+   "MOVE_MIN_INTERVAL",
+   "REQUIRED_MOVE_COUNT",
+   "BASELINE_AVG_SEC",
+   "MOUNT_ROLL_OFFSET_DEG",
+   "MOUNT_PITCH_OFFSET_DEG",
+   "DIST_DANGER_M",
+   "DIST_WARN_M",
+   "DIST_HYSTERESIS_M",
+   "LIDAR_MIN_VALID_M",
+   "LIDAR_MAX_VALID_M",
+   "LIDAR_PERCENTILE",
+   "LIDAR_CONFIRM_FRAMES",
+   "LIDAR_PAYLOAD_OFFSET",
+   "LIDAR_PACKING",
+   "LIDAR_CHECKSUM",
+   "LIDAR_SCALE_MM",
+   "CURB_DROP_M",
+   "CURB_RISE_M",
+   "CURB_WARN_M",
+   "ALERT_ENABLED",
+   "ALERT_BACKEND",
+   "BUZZER_PIN",
+   "VIBRATOR_PIN",
+   "LED_WARN_PIN",
+   "LED_DANGER_PIN",
+   "BUZZER_FREQ_WARN",
+   "BUZZER_FREQ_DANGER",
+   "BUZZER_FREQ_FALL",
+   "BUZZER_DUTY",
+   "PATTERN_WARN",
+   "PATTERN_DANGER",
+   "PATTERN_TIPOVER_ASK",
+   "PATTERN_SENSOR_FAULT",
+   "SENSOR_FAULT_REPEAT_SEC",
+   "ALERT_MIN_REPEAT_SEC",
+   "BUTTONS_ENABLED",
+   "BUTTON_BACKEND",
+   "BUTTON_CANCEL_PIN",
+   "BUTTON_SOS_PIN",
+   "BUTTON_BOUNCE_SEC",
+   "BUTTON_SOS_HOLD_SEC",
+   "NTRIP_ENABLED",
+   "NTRIP_HOST",
+   "NTRIP_PORT",
+   "NTRIP_MOUNTPOINT",
+   "NTRIP_USER",
+   "NTRIP_PASS",
+   "NTRIP_GGA_INTERVAL",
+   "NTRIP_TIMEOUT",
+   "NTRIP_MAX_BACKOFF",
+   "BATTERY_BACKEND",
+   "BATTERY_I2C_BUS",
+   "BATTERY_INA219_ADDR",
+   "BATTERY_MAX17043_ADDR",
+   "BATTERY_CELLS",
+   "BATTERY_SHUNT_OHM",
+   "BATTERY_WARN_PCT",
+   "BATTERY_CRITICAL_PCT",
+   "BATTERY_SHUTDOWN_PCT",
+   "BATTERY_SHUTDOWN_ENABLED",
+   "BATTERY_POLL_SEC",
+   "UDP_LIDAR_PORT",
+   "UDP_STATUS_PORT",
+   "UDP_COMMAND_PORT",
+   "UDP_STATUS_ADDR",
+   "UDP_COMMAND_ADDR",
+   "STATUS_HZ",
+   "SCHEMA_VERSION",
+   "WEBHOOK_URL",
+   "WEBHOOK_TIMEOUT",
+   "WEBHOOK_MAX_RETRY",
+   "MAP_FETCH_TIMEOUT",
+   "NOTIFY_SPOOL",
+   "NOTIFY_SPOOL_MAX",
+   "LOG_DIR",
+   "CSV_ENABLED",
+   "CSV_FLUSH_EVERY"
+  ],
+  "imports": [
+   "os"
+  ]
+ },
+ "console.py": {
+  "funcs": [
+   "setup()",
+   "safe_print()"
+  ],
+  "classes": [],
+  "consts": [],
+  "imports": [
+   "sys"
+  ]
+ },
+ "csv_logger.py": {
+  "funcs": [],
+  "classes": [
+   [
+    "SampleLogger",
+    [
+     "write()",
+     "close()"
+    ]
+   ]
+  ],
+  "consts": [
+   "HEADER"
+  ],
+  "imports": [
+   "config",
+   "csv",
+   "pathlib",
+   "threading",
+   "time"
+  ]
+ },
+ "jetson\\launch\\walker_lidar.launch.py": {
+  "funcs": [
+   "generate_launch_description()"
+  ],
+  "classes": [],
+  "consts": [],
+  "imports": [
+   "launch",
+   "launch_ros.actions"
+  ]
+ },
+ "jetson\\lidar_bridge_node.py": {
+  "funcs": [
+   "main()"
+  ],
+  "classes": [
+   [
+    "LidarBridge",
+    []
+   ]
+  ],
+  "consts": [
+   "SCHEMA_VERSION",
+   "SENSOR_QOS"
+  ],
+  "imports": [
+   "json",
+   "numpy",
+   "rclpy",
+   "rclpy.node",
+   "rclpy.qos",
+   "sensor_msgs.msg",
+   "sensor_msgs_py",
+   "socket",
+   "time"
+  ]
+ },
+ "notifier.py": {
+  "funcs": [
+   "is_configured()",
+   "start(log_callback)",
+   "send_preliminary(imu, gps, age)",
+   "send_confirmed(imu, gps, age, peak_g)",
+   "send_cancelled(reason)",
+   "pending()"
+  ],
+  "classes": [],
+  "consts": [
+   "KIND_PRELIM",
+   "KIND_CONFIRM",
+   "KIND_CANCEL",
+   "DURABLE_KINDS"
+  ],
+  "imports": [
+   "config",
+   "datetime",
+   "json",
+   "os",
+   "pathlib",
+   "queue",
+   "schema",
+   "states",
+   "threading",
+   "time"
+  ]
+ },
+ "ntrip_client.py": {
+  "funcs": [
+   "is_configured()",
+   "stats()",
+   "start(log_callback)",
+   "stop()",
+   "fetch_sourcetable(host, port, timeout)",
+   "print_sourcetable()"
+  ],
+  "classes": [],
+  "consts": [],
+  "imports": [
+   "base64",
+   "config",
+   "socket",
+   "threading",
+   "time"
+  ]
+ },
+ "run_dev.py": {
+  "funcs": [
+   "main()"
+  ],
+  "classes": [],
+  "consts": [
+   "PY"
+  ],
+  "imports": [
+   "argparse",
+   "console",
+   "subprocess",
+   "sys",
+   "threading",
+   "time"
+  ]
+ },
+ "safety_monitor.py": {
+  "funcs": [
+   "log(msg, level)",
+   "init_sensors()",
+   "conn_status(valid, status)",
+   "main()"
+  ],
+  "classes": [],
+  "consts": [
+   "ARGS"
+  ],
+  "imports": [
+   "alerting",
+   "argparse",
+   "battery",
+   "buttons",
+   "config",
+   "console",
+   "csv_logger",
+   "notifier",
+   "ntrip_client",
+   "schema",
+   "sensors",
+   "states",
+   "status_link",
+   "sys",
+   "threading",
+   "time",
+   "tipover_monitor"
+  ]
+ },
+ "schema.py": {
+  "funcs": [],
+  "classes": [
+   [
+    "ImuSample",
+    [
+     "tilt_deg()"
+    ]
+   ],
+   [
+    "GpsFix",
+    [
+     "has_position()"
+    ]
+   ],
+   [
+    "ObstacleReport",
+    [
+     "nearest_m()"
+    ]
+   ],
+   [
+    "HealthReport",
+    []
+   ],
+   [
+    "SystemStatus",
+    [
+     "to_dict()",
+     "from_dict()"
+    ]
+   ]
+  ],
+  "consts": [],
+  "imports": [
+   "states"
+  ]
+ },
+ "sensors\\__init__.py": {
+  "funcs": [],
+  "classes": [],
+  "consts": [],
+  "imports": []
+ },
+ "sensors\\gps_sensor.py": {
+  "funcs": [
+   "snapshot()",
+   "position_age()",
+   "write_rtcm(data)",
+   "last_gga()",
+   "start(log_callback)",
+   "stop()",
+   "find_gps_port()",
+   "run_integrity_check(log_callback)"
+  ],
+  "classes": [],
+  "consts": [
+   "UBLOX_VID"
+  ],
+  "imports": [
+   "config",
+   "platform",
+   "queue",
+   "schema",
+   "states",
+   "threading",
+   "time"
+  ]
+ },
+ "sensors\\gps_source.py": {
+  "funcs": [
+   "snapshot()",
+   "position_age()",
+   "start(log_callback)",
+   "stop()",
+   "run_integrity_check(log_callback)"
+  ],
+  "classes": [],
+  "consts": [],
+  "imports": [
+   "config",
+   "schema",
+   "sensors",
+   "time"
+  ]
+ },
+ "sensors\\imu_sensor.py": {
+  "funcs": [
+   "snapshot()",
+   "start(log_callback)",
+   "stop()",
+   "capture_mount_offset(duration)",
+   "run_integrity_check(log_callback)"
+  ],
+  "classes": [],
+  "consts": [
+   "SETUP_COMMANDS",
+   "EXPECTED_FIELDS"
+  ],
+  "imports": [
+   "config",
+   "math",
+   "schema",
+   "states",
+   "threading",
+   "time"
+  ]
+ },
+ "sensors\\imu_source.py": {
+  "funcs": [
+   "snapshot()",
+   "start(log_callback)",
+   "stop()",
+   "run_integrity_check(log_callback)",
+   "capture_mount_offset(duration)"
+  ],
+  "classes": [],
+  "consts": [],
+  "imports": [
+   "config",
+   "schema",
+   "sensors"
+  ]
+ },
+ "sensors\\lidar_serial.py": {
+  "funcs": [
+   "snapshot()",
+   "status(side)",
+   "start(log_callback)",
+   "stop()"
+  ],
+  "classes": [],
+  "consts": [
+   "HEADER",
+   "MAX_PAYLOAD",
+   "START_3D_CMD"
+  ],
+  "imports": [
+   "config",
+   "numpy",
+   "schema",
+   "states",
+   "threading",
+   "time"
+  ]
+ },
+ "sensors\\lidar_source.py": {
+  "funcs": [
+   "snapshot()",
+   "status(side)",
+   "start(log_callback)",
+   "stop()",
+   "run_integrity_check(log_callback)",
+   "source_name()"
+  ],
+  "classes": [],
+  "consts": [],
+  "imports": [
+   "config",
+   "schema",
+   "states"
+  ]
+ },
+ "sensors\\lidar_udp.py": {
+  "funcs": [
+   "snapshot()",
+   "status(side)",
+   "start(log_callback)",
+   "stop()",
+   "run_integrity_check(log_callback)"
+  ],
+  "classes": [],
+  "consts": [],
+  "imports": [
+   "config",
+   "json",
+   "schema",
+   "socket",
+   "threading",
+   "time"
+  ]
+ },
+ "sensors\\sim.py": {
+  "funcs": [
+   "start(scenario, log_callback)",
+   "stop()",
+   "elapsed()",
+   "imu_snapshot()",
+   "gps_snapshot()",
+   "obstacle_snapshot()"
+  ],
+  "classes": [],
+  "consts": [
+   "SCENARIOS"
+  ],
+  "imports": [
+   "config",
+   "math",
+   "random",
+   "schema",
+   "states",
+   "threading",
+   "time"
+  ]
+ },
+ "states.py": {
+  "funcs": [
+   "fix_quality_name(q)"
+  ],
+  "classes": [],
+  "consts": [
+   "CONN_WAITING",
+   "CONN_ERROR",
+   "CONN_OK",
+   "CONN_STALE",
+   "TIPOVER_NORMAL",
+   "TIPOVER_STABILIZING",
+   "TIPOVER_CHECKING",
+   "TIPOVER_ASKING",
+   "TIPOVER_CONFIRMED",
+   "TIPOVER_REPORTED",
+   "TIPOVER_DISPLAY",
+   "CMD_USER_YES",
+   "CMD_USER_NO",
+   "CMD_RESET",
+   "FIX_QUALITY_NAME"
+  ],
+  "imports": []
+ },
+ "status_link.py": {
+  "funcs": [],
+  "classes": [
+   [
+    "StatusPublisher",
+    [
+     "publish()",
+     "close()"
+    ]
+   ],
+   [
+    "StatusSubscriber",
+    [
+     "start()",
+     "stop()",
+     "latest()"
+    ]
+   ],
+   [
+    "CommandSender",
+    [
+     "send()"
+    ]
+   ],
+   [
+    "CommandListener",
+    [
+     "start()",
+     "stop()"
+    ]
+   ]
+  ],
+  "consts": [],
+  "imports": [
+   "config",
+   "json",
+   "schema",
+   "socket",
+   "threading",
+   "time"
+  ]
+ },
+ "tests\\run_all.py": {
+  "funcs": [
+   "run()"
+  ],
+  "classes": [],
+  "consts": [
+   "ROOT",
+   "MODULES"
+  ],
+  "imports": [
+   "console",
+   "importlib",
+   "pathlib",
+   "sys",
+   "traceback"
+  ]
+ },
+ "tests\\test_components.py": {
+  "funcs": [
+   "wait_for(predicate, timeout, interval)",
+   "test_status_link_roundtrip()",
+   "test_command_link_dedupes_burst()",
+   "test_lidar_udp_rejects_stale_and_accepts_restart()",
+   "test_lidar_link_loss_hides_stale_distance()",
+   "test_nmea_checksum_and_fix_quality()",
+   "test_nmea_rejects_missing_checksum()",
+   "test_gps_keeps_position_when_fix_lost()",
+   "test_lidar_unpack_u16le()",
+   "test_lidar_unpack_u12()",
+   "test_lidar_checksum_modes()",
+   "test_alert_priority_and_hysteresis()",
+   "test_alert_level_mapping()",
+   "test_webhook_validation_rejects_placeholder()",
+   "test_notify_spool_survives_restart(tmpdir)",
+   "test_battery_curve_monotonic()",
+   "test_battery_reports_none_when_unmeasurable()",
+   "test_all_sim_scenarios_run()",
+   "test_schema_roundtrip_preserves_everything()",
+   "test_imu_tilt_uses_max_of_roll_pitch()"
+  ],
+  "classes": [],
+  "consts": [],
+  "imports": [
+   "config",
+   "pathlib",
+   "sys",
+   "time"
+  ]
+ },
+ "tests\\test_tipover_fsm.py": {
+  "funcs": [
+   "test_normal_walking_never_triggers()",
+   "test_impact_while_upright_is_released()",
+   "test_fall_confirmed_when_motionless()",
+   "test_user_cancel_during_asking()",
+   "test_user_cancel_before_popup_is_not_lost()",
+   "test_movement_releases_but_needs_time_separation()",
+   "test_posture_recovery_releases()",
+   "test_rearm_cooldown_prevents_repeat_alerts()",
+   "test_sos_bypasses_fsm()",
+   "test_dead_imu_does_not_advance_fsm()",
+   "test_reset_after_report()",
+   "test_confirm_sends_exactly_once()"
+  ],
+  "classes": [
+   [
+    "Clock",
+    []
+   ],
+   [
+    "Rig",
+    [
+     "feed()",
+     "impact()",
+     "state()",
+     "sent()"
+    ]
+   ]
+  ],
+  "consts": [
+   "SENT"
+  ],
+  "imports": [
+   "buttons",
+   "config",
+   "notifier",
+   "pathlib",
+   "schema",
+   "states",
+   "sys",
+   "tipover_monitor"
+  ]
+ },
+ "tipover_monitor.py": {
+  "funcs": [],
+  "classes": [
+   [
+    "TipoverMonitor",
+    [
+     "start()",
+     "stop()",
+     "submit()",
+     "snapshot()",
+     "step()"
+    ]
+   ]
+  ],
+  "consts": [
+   "TICK_HZ"
+  ],
+  "imports": [
+   "buttons",
+   "collections",
+   "config",
+   "notifier",
+   "schema",
+   "sensors",
+   "states",
+   "threading",
+   "time"
+  ]
+ },
+ "tools\\analyze_logs.py": {
+  "funcs": [
+   "scenario_of(path)",
+   "main()"
+  ],
+  "classes": [],
+  "consts": [
+   "POSITIVE_PREFIXES"
+  ],
+  "imports": [
+   "argparse",
+   "console",
+   "glob",
+   "os",
+   "pathlib",
+   "sys"
+  ]
+ },
+ "tools\\lidar_probe.py": {
+  "funcs": [
+   "decode_u16le(buf)",
+   "decode_u16be(buf)",
+   "decode_u12(buf)",
+   "decode_u12_alt(buf)",
+   "iter_frames(data)",
+   "cmd_dump(args)",
+   "score_layout(values_mm, truth_m)",
+   "cmd_analyze(args)",
+   "main()"
+  ],
+  "classes": [],
+  "consts": [
+   "HEADER",
+   "MAX_PAYLOAD",
+   "DECODERS"
+  ],
+  "imports": [
+   "argparse",
+   "config",
+   "console",
+   "os",
+   "pathlib",
+   "sys"
+  ]
+ },
+ "tools\\replay.py": {
+  "funcs": [
+   "is_positive(name)",
+   "scenario_of(path)",
+   "replay_file(path, verbose)",
+   "collect(paths)",
+   "cmd_score(files, verbose)",
+   "cmd_sweep(files, args)",
+   "main()"
+  ],
+  "classes": [],
+  "consts": [
+   "POSITIVE_PREFIXES"
+  ],
+  "imports": [
+   "argparse",
+   "config",
+   "console",
+   "csv",
+   "glob",
+   "notifier",
+   "os",
+   "pathlib",
+   "schema",
+   "states",
+   "sys",
+   "tipover_monitor"
+  ]
+ },
+ "ui.py": {
+  "funcs": [
+   "level_color(lv)",
+   "level_text(lv)",
+   "dist_to_level(d)",
+   "read_battery()"
+  ],
+  "classes": [
+   [
+    "FlashOverlay",
+    [
+     "start()",
+     "stop()",
+     "active()"
+    ]
+   ],
+   [
+    "BatteryWidget",
+    [
+     "update_battery()"
+    ]
+   ],
+   [
+    "LidarCard",
+    [
+     "update_card()"
+    ]
+   ],
+   [
+    "IMUCard",
+    [
+     "update_card()"
+    ]
+   ],
+   [
+    "GPSCard",
+    [
+     "update_card()"
+    ]
+   ],
+   [
+    "TerminalCard",
+    [
+     "append()"
+    ]
+   ],
+   [
+    "Dashboard",
+    []
+   ]
+  ],
+  "consts": [
+   "C_FLASH_ON"
+  ],
+  "imports": [
+   "buttons",
+   "config",
+   "console",
+   "os",
+   "states",
+   "status_link",
+   "time",
+   "tkinter"
+  ]
+ }
+}
