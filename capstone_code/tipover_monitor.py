@@ -6,8 +6,9 @@ GUI가 죽어도 여기는 계속 동작한다. (예전에는 판정 로직이 G
 들어 있어서, tkinter가 멈추면 전도 감지도 같이 죽었다)
 
 상태 전이
-    평상시 ──충격 ≥ 2.8g──> 충격 감지 ──[기울기 < 60°]──> 평상시 (방지턱/내려놓기)
-                                    └──[기울기 ≥ 60°]──> 움직임 분석중
+    평상시 ──충격 ≥ 2.8g──> 충격 감지
+    충격 감지 ──1~3초 중 기울기≥60°가 75% 미만──> 평상시 (단순 충격)
+             └──75% 이상──────────────────────> 움직임 분석중
     움직임 분석중 ──의미 있는 움직임 2회──> 평상시 (의식 있음)
                 └──5초간 정지──────────> 응답 대기
     응답 대기 ──"아니오"──> 평상시
@@ -65,6 +66,8 @@ class TipoverMonitor:
         self._move_count = 0
         self._last_move_t = 0.0
         self._rearm_at = 0.0         # 이 시각 전까지는 충격 감지를 하지 않는다
+        self._stabilize_samples = 0
+        self._stabilize_tilted = 0
 
     # ────────────────────────────────────────── 공개 API
     def start(self):
@@ -169,6 +172,8 @@ class TipoverMonitor:
                 return          # 해제 직후 재트리거 방지 (반복 통보 차단)
             if imu.accel_g >= config.IMPACT_THRESHOLD_G:
                 self._peak_g = imu.accel_g
+                self._stabilize_samples = 0
+                self._stabilize_tilted = 0
                 self._goto(TIPOVER_STABILIZING)
                 self._emit(f"충격 감지 {imu.accel_g:.2f}g — 안정화 대기", "WARN")
                 # [H2] 즉시 예비 알림. 보호자가 지금부터 움직일 수 있다.
@@ -177,21 +182,29 @@ class TipoverMonitor:
         # ── 충격 감지 (안정화 대기) ───────────────────
         elif st == TIPOVER_STABILIZING:
             self._peak_g = max(self._peak_g, imu.accel_g)
-            if now - self._t_state >= config.STABILIZE_TIME:
-                tilt = imu.tilt_deg
-                # [C5] ★ 핵심 관문: 쓰러져 있지 않으면 사고가 아니다
-                if tilt < config.TIPOVER_TILT_DEG:
-                    self._emit(f"기울기 {tilt:.0f}° — 서 있는 상태. "
-                               f"단순 충격으로 판단하여 해제합니다.", "INFO")
+            elapsed = now - self._t_state
+            if config.STABILIZE_WINDOW_START_SEC <= elapsed \
+                    <= config.STABILIZE_WINDOW_END_SEC:
+                self._stabilize_samples += 1
+                if imu.tilt_deg >= config.TIPOVER_TILT_DEG:
+                    self._stabilize_tilted += 1
+
+            if elapsed >= config.STABILIZE_WINDOW_END_SEC:
+                ratio = (self._stabilize_tilted / self._stabilize_samples
+                         if self._stabilize_samples else 0.0)
+                # [C5] 구간 대부분이 쓰러진 자세가 아니면 사고가 아니다.
+                if ratio < config.STABILIZE_TILT_RATIO:
+                    self._emit(f"쓰러짐 자세 비율 {ratio:.0%} — 단순 충격으로 해제", "INFO")
                     notifier.send_cancelled(
-                        f"기울기 {tilt:.0f}°로 정상 자세 확인 (충격 {self._peak_g:.2f}g)")
+                        f"쓰러짐 자세 비율 {ratio:.0%} "
+                        f"(충격 {self._peak_g:.2f}g)")
                     self._reset()
                     return
                 self._base = self._avg()
                 self._move_count = 0
                 self._last_move_t = 0.0
                 self._goto(TIPOVER_CHECKING)
-                self._emit(f"기울기 {tilt:.0f}° — 쓰러짐 자세. 움직임 관찰 시작", "WARN")
+                self._emit(f"쓰러짐 자세 {ratio:.0%} — 움직임 관찰 시작", "WARN")
 
         # ── 움직임 분석중 ─────────────────────────────
         elif st == TIPOVER_CHECKING:
@@ -275,6 +288,8 @@ class TipoverMonitor:
         self._peak_g = 0.0
         self._move_count = 0
         self._base = None
+        self._stabilize_samples = 0
+        self._stabilize_tilted = 0
         self._rearm_at = now + config.REARM_COOLDOWN if cooldown else 0.0
         if note:
             self._emit(f"상태 초기화 ({note})", "INFO")

@@ -89,7 +89,8 @@ def test_impact_while_upright_is_released():
     """
     r = Rig()
     r.impact(3.5)
-    r.feed(config.STABILIZE_TIME + 0.5, accel=1.0, pitch=8.0)   # 서 있는 자세
+    r.feed(config.STABILIZE_WINDOW_END_SEC + 0.5,
+           accel=1.0, pitch=8.0)   # 서 있는 자세
     assert r.state == TIPOVER_NORMAL
     assert r.sent("PRELIM")          # 예비 알림은 나가고
     assert r.sent("CANCEL")          # 곧바로 해제 알림이 나가야 한다
@@ -100,7 +101,7 @@ def test_fall_confirmed_when_motionless():
     """충격 + 쓰러진 자세 + 무응답 → 사고 확정."""
     r = Rig()
     r.impact(4.6)
-    r.feed(config.STABILIZE_TIME + 0.1, accel=1.0, pitch=82.0)
+    r.feed(config.STABILIZE_WINDOW_END_SEC + 0.1, accel=1.0, pitch=82.0)
     assert r.state == TIPOVER_CHECKING
     r.feed(config.CHECK_TIME + 0.1, accel=1.0, pitch=82.0)
     assert r.state == TIPOVER_ASKING
@@ -113,7 +114,8 @@ def test_user_cancel_during_asking():
     """응답 대기 중 '아니오' → 신고하지 않는다."""
     r = Rig()
     r.impact(4.6)
-    r.feed(config.STABILIZE_TIME + config.CHECK_TIME + 0.3, accel=1.0, pitch=82.0)
+    r.feed(config.STABILIZE_WINDOW_END_SEC + config.CHECK_TIME + 0.3,
+           accel=1.0, pitch=82.0)
     assert r.state == TIPOVER_ASKING
     r.mon.submit(CMD_USER_NO)
     r.feed(0.2, accel=1.0, pitch=82.0)
@@ -143,7 +145,7 @@ def test_movement_releases_but_needs_time_separation():
     """
     r = Rig()
     r.impact(4.6)
-    r.feed(config.STABILIZE_TIME + 0.1, accel=1.0, pitch=82.0)
+    r.feed(config.STABILIZE_WINDOW_END_SEC + 0.1, accel=1.0, pitch=82.0)
     assert r.state == TIPOVER_CHECKING
 
     # 연속 2샘플의 스파이크로는 취소되면 안 된다
@@ -162,7 +164,7 @@ def test_posture_recovery_releases():
     """쓰러졌다가 스스로 일어나면 해제된다."""
     r = Rig()
     r.impact(4.6)
-    r.feed(config.STABILIZE_TIME + 0.1, accel=1.0, pitch=82.0)
+    r.feed(config.STABILIZE_WINDOW_END_SEC + 0.1, accel=1.0, pitch=82.0)
     r.feed(0.3, accel=1.0, pitch=10.0)         # 일어났다
     assert r.state == TIPOVER_NORMAL
     assert not r.sent("CONFIRM")
@@ -175,7 +177,7 @@ def test_rearm_cooldown_prevents_repeat_alerts():
     """
     r = Rig()
     r.impact(3.5)
-    r.feed(config.STABILIZE_TIME + 0.3, accel=1.0, pitch=5.0)
+    r.feed(config.STABILIZE_WINDOW_END_SEC + 0.3, accel=1.0, pitch=5.0)
     assert r.state == TIPOVER_NORMAL
     SENT.clear()
     r.impact(4.0)                              # 쿨다운 중 재충격
@@ -224,7 +226,29 @@ def test_confirm_sends_exactly_once():
     r = Rig()
     r.mon.submit(CMD_USER_YES)
     r.impact(4.6)
-    r.feed(config.STABILIZE_TIME + config.CHECK_TIME + config.ASK_TIMEOUT + 1.0,
+    r.feed(config.STABILIZE_WINDOW_END_SEC + config.CHECK_TIME
+           + config.ASK_TIMEOUT + 1.0,
            accel=1.0, pitch=82.0)
     r.feed(10.0, accel=1.0, pitch=82.0)
     assert sum(1 for s in SENT if s.startswith("CONFIRM")) == 1
+
+
+def test_stabilize_window_rejects_short_tilt_spike():
+    """1~3초 구간 중 잠깐만 기울면 전도로 판정하지 않는다."""
+    r = Rig()
+    r.impact(4.0)
+    r.feed(1.0, accel=1.0, pitch=5.0)
+    r.feed(0.4, accel=1.0, pitch=82.0)
+    r.feed(1.8, accel=1.0, pitch=5.0)
+    assert r.state == TIPOVER_NORMAL
+    assert not r.sent("CONFIRM")
+
+
+def test_stabilize_window_accepts_sustained_tilt():
+    """1~3초 구간의 75% 이상 기울어진 자세면 움직임 분석으로 간다."""
+    r = Rig()
+    r.impact(4.0)
+    r.feed(1.4, accel=1.0, pitch=82.0)
+    r.feed(0.4, accel=1.0, pitch=5.0)
+    r.feed(1.4, accel=1.0, pitch=82.0)
+    assert r.state == TIPOVER_CHECKING

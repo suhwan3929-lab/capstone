@@ -246,9 +246,11 @@ def main():
             if ntrip_client.is_configured() and now - last_ntrip_note > 60:
                 last_ntrip_note = now
                 st = ntrip_client.stats()
+                rtcm_age = ("-" if st["rtcm_age"] is None
+                            else f"{st['rtcm_age']:.0f}s")
                 log(f"[NTRIP] 연결={st['connected']} 수신={st['bytes']:,}B "
                     f"재접속={st['reconnects']}회 "
-                    f"보정지연={'-' if st['rtcm_age'] is None else f'{st['rtcm_age']:.0f}s'}",
+                    f"보정지연={rtcm_age}",
                     "INFO")
 
             if pub and tick % publish_every == 0:

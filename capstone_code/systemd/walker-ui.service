@@ -8,9 +8,9 @@ After=walker-safety.service
 [Service]
 Type=simple
 User=walker
-WorkingDirectory=/opt/walker
+WorkingDirectory=/opt/walker/capstone_code
 Environment=DISPLAY=:0
-ExecStart=/opt/walker/venv/bin/python -u ui.py
+ExecStart=/opt/walker/venv/bin/python -u /opt/walker/capstone_code/ui.py
 Restart=on-failure
 RestartSec=5
 

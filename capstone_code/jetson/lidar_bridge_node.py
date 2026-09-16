@@ -24,6 +24,7 @@ Jetson: ROS 2 LiDAR 브리지 노드
 import json
 import socket
 import time
+import uuid
 
 import numpy as np
 import rclpy
@@ -80,6 +81,7 @@ class LidarBridge(Node):
         self.curb_warn = float(g("curb_warn_m"))
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.session = uuid.uuid4().hex
         self.seq = 0
         self.side = {"left": (None, 0.0), "right": (None, 0.0)}
         self.curb = {"left": (None, "", 0.0), "right": (None, "", 0.0)}
@@ -198,7 +200,8 @@ class LidarBridge(Node):
             if curb_m is None or cm < curb_m:
                 curb_m, curb_type = cm, ct
 
-        pkt = {"v": SCHEMA_VERSION, "seq": self.seq, "t": now,
+        pkt = {"v": SCHEMA_VERSION, "session": self.session,
+               "seq": self.seq, "t": now,
                "curb_m": curb_m, "curb_type": curb_type, **body}
         try:
             self.sock.sendto(json.dumps(pkt).encode("utf-8"), self.addr)

@@ -20,6 +20,26 @@ def wait_for(predicate, timeout=3.0, interval=0.02):
     return False
 
 
+def test_systemd_paths_match_deployment_layout():
+    """서비스 파일은 문서의 /opt/walker/capstone_code 배치와 일치해야 한다."""
+    root = pathlib.Path(__file__).resolve().parent.parent
+    for name, entry in (("walker-safety.service", "safety_monitor.py"),
+                        ("walker-ui.service", "ui.py")):
+        text = (root / "systemd" / name).read_text(encoding="utf-8")
+        assert "WorkingDirectory=/opt/walker/capstone_code" in text
+        assert f"/opt/walker/capstone_code/{entry}" in text
+
+
+def test_python_sources_compile():
+    """지원 Python에서 실행 전에 실패하는 문법 오류가 없어야 한다."""
+    root = pathlib.Path(__file__).resolve().parent.parent
+    for path in root.rglob("*.py"):
+        if ".venv" in path.parts or ".python" in path.parts:
+            continue
+        source = path.read_text(encoding="utf-8-sig")
+        compile(source, str(path), "exec")
+
+
 # ══════════════════════════════════════════════════════════
 # UDP 프로세스 간 링크
 # ══════════════════════════════════════════════════════════
@@ -86,26 +106,35 @@ def test_lidar_udp_rejects_stale_and_accepts_restart():
     port = 19100
     config.UDP_LIDAR_PORT = port
     lidar_udp.start(lambda *a, **k: None)
+    first_thread = lidar_udp._thread
+    lidar_udp.start(lambda *a, **k: None)
+    assert lidar_udp._thread is first_thread, "LiDAR 수신 스레드가 중복 시작되었다"
     time.sleep(0.3)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-    def send(seq, d):
+    def send(session, seq, d):
         sock.sendto(json.dumps({
-            "v": config.SCHEMA_VERSION, "seq": seq, "t": time.time(),
+            "v": config.SCHEMA_VERSION, "session": session,
+            "seq": seq, "t": time.time(),
             "left": {"d": d, "ok": True}, "right": {"d": d, "ok": True},
         }).encode(), ("127.0.0.1", port))
 
-    send(5000, 1.5)
+    send("boot-a", 5000, 1.5)
     assert wait_for(lambda: lidar_udp.snapshot().left_m == 1.5), "패킷 미수신"
 
-    send(4999, 9.9)            # 순서 역전 → 무시되어야 한다
+    send("boot-a", 4999, 9.9)  # 같은 세션의 순서 역전 → 무시
     time.sleep(0.3)
     assert lidar_udp.snapshot().left_m == 1.5, "순서 역전 패킷이 반영되었다"
 
-    send(1, 0.7)               # Jetson 재시작(seq 리셋) → 수용되어야 한다
+    send("boot-b", 1, 0.7)     # 새 세션의 seq 리셋 → 수용
     assert wait_for(lambda: lidar_udp.snapshot().left_m == 0.7),         "Jetson 재시작 후 패킷이 영구히 거부되었다"
 
+    send("boot-a", 5001, 9.9)  # 이전 세션의 지연 패킷 → 무시
+    time.sleep(0.2)
+    assert lidar_udp.snapshot().left_m == 0.7, "이전 세션 지연 패킷이 반영되었다"
+
     lidar_udp.stop()
+    assert lidar_udp._thread is None, "LiDAR 수신 스레드가 종료되지 않았다"
     sock.close()
 
 

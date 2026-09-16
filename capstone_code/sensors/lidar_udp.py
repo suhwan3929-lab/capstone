@@ -22,8 +22,11 @@ from schema import ObstacleReport
 _lock = threading.Lock()
 _state = {"left": None, "right": None, "left_ok": False, "right_ok": False,
           "curb_m": None, "curb_type": "",
-          "seq": 0, "arrived": 0.0, "latency": None}
+          "session": None, "seq": 0, "arrived": 0.0, "latency": None}
+_seen_sessions = set()
 _running = False
+_thread = None
+_start_lock = threading.Lock()
 _log = None
 
 
@@ -56,17 +59,30 @@ def status(side: str) -> str:
 
 
 def start(log_callback=None) -> bool:
-    global _running, _log
+    """수신 스레드를 한 번만 시작한다.
+
+    무결성 검사와 본 초기화가 모두 이 함수를 호출하므로 반드시 멱등이어야 한다.
+    """
+    global _running, _thread, _log
     _log = log_callback
-    _running = True
-    threading.Thread(target=_rx_loop, daemon=True, name="LiDAR-RX").start()
+    with _start_lock:
+        if _thread is not None and _thread.is_alive():
+            return True
+        _running = True
+        _thread = threading.Thread(target=_rx_loop, daemon=True, name="LiDAR-RX")
+        _thread.start()
     _emit(f"UDP {config.UDP_LIDAR_PORT} 수신 대기")
     return True
 
 
 def stop():
-    global _running
+    global _running, _thread
     _running = False
+    thread = _thread
+    if thread is not None and thread is not threading.current_thread():
+        thread.join(timeout=0.5)
+    if thread is None or not thread.is_alive():
+        _thread = None
 
 
 def run_integrity_check(log_callback=None) -> bool:
@@ -100,12 +116,21 @@ def _rx_loop():
             with _lock:
                 prev = _state["seq"]
                 new = int(pkt["seq"])
-                # 순서 역전 패킷은 버린다. 단 seq가 크게 뒤로 가면
-                # Jetson이 재시작한 것이므로 새 세션으로 받아들인다.
-                # (이 예외가 없으면 Jetson 재부팅 후 모든 패킷을 영구히 거부한다)
-                if new <= prev and (prev - new) < 1000:
+                session = pkt.get("session")
+                if session:
+                    current = _state["session"]
+                    if session != current:
+                        # 이미 끝난 세션의 지연 패킷은 새 데이터로 되살리지 않는다.
+                        if session in _seen_sessions:
+                            continue
+                        _seen_sessions.add(session)
+                    elif new <= prev:
+                        continue
+                # 구버전 브리지는 session이 없으므로 기존 휴리스틱을 유지한다.
+                elif new <= prev and (prev - new) < 1000:
                     continue
                 _state.update(
+                    session=session,
                     seq=new,
                     left=pkt["left"]["d"] if pkt["left"]["ok"] else None,
                     right=pkt["right"]["d"] if pkt["right"]["ok"] else None,

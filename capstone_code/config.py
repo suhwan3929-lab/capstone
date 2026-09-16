@@ -106,9 +106,10 @@ IMPACT_THRESHOLD_G = 2.8
 #:     일치한다 (cos 60° = 0.5). 서로 다른 두 계열이 같은 값에 도달했다.
 TIPOVER_TILT_DEG = 60.0
 
-#: [C] 근거 없음. 문헌(Bourke3)은 충격 후 **1~3초 구간**을 연속 관찰한다.
-#:     현재 구현은 5초를 기다린 뒤 한 시점만 본다 → 구간 관찰로 바꾸는 것이 문헌 정합.
-STABILIZE_TIME = 5.0
+#: [A] 충격 직후 흔들림은 제외하고 1~3초 구간의 자세를 연속 관찰한다.
+STABILIZE_WINDOW_START_SEC = 1.0
+STABILIZE_WINDOW_END_SEC = 3.0
+STABILIZE_TILT_RATIO = 0.75
 
 #: [C] 근거 없음. 참고: Apple Watch는 **약 60초** 부동을 요구한다.
 #:     우리는 그 1/12이다. 골든타임 우선 판단이지만 실측으로 검증할 것.

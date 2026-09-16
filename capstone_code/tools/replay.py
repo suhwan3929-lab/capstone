@@ -157,7 +157,9 @@ def collect(paths):
 def cmd_score(files, verbose):
     print(f"\n현재 임계값:  충격 {config.IMPACT_THRESHOLD_G} g  |  "
           f"기울기 {config.TIPOVER_TILT_DEG}°  |  "
-          f"안정화 {config.STABILIZE_TIME}s  |  관찰 {config.CHECK_TIME}s\n")
+          f"자세창 {config.STABILIZE_WINDOW_START_SEC:g}~"
+          f"{config.STABILIZE_WINDOW_END_SEC:g}s/"
+          f"{config.STABILIZE_TILT_RATIO:.0%}  |  관찰 {config.CHECK_TIME}s\n")
     print(f"{'파일':<34}{'구분':<6}{'판정':<10}{'확정까지':>9}"
           f"{'최대g':>8}{'최대기울기':>11}")
     print("-" * 80)
