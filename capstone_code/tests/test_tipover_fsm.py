@@ -208,6 +208,31 @@ def test_dead_imu_does_not_advance_fsm():
     assert r.state == TIPOVER_STABILIZING, "죽은 센서로 상태가 진행되었다"
 
 
+def test_sos_reports_once_with_dead_imu():
+    r = Rig()
+    r.mon.submit(CMD_SOS)
+    r.feed(1.0, valid=False)
+    assert r.state == TIPOVER_REPORTED
+    assert sum(s.startswith("CONFIRM") for s in SENT) == 1
+    r.mon.submit(CMD_SOS)
+    r.feed(1.0, valid=False)
+    assert sum(s.startswith("CONFIRM") for s in SENT) == 1
+
+
+def test_confirmed_event_survives_imu_loss_before_delivery():
+    from states import TIPOVER_CONFIRMED
+    r = Rig()
+    r.impact(4.6)
+    r.feed(config.STABILIZE_TIME + config.CHECK_TIME + 0.3, pitch=82.0)
+    assert r.state == TIPOVER_ASKING
+    r.mon.submit(CMD_USER_YES)
+    r.feed(0.01, pitch=82.0)
+    assert r.state == TIPOVER_CONFIRMED
+    r.feed(1.0, valid=False)
+    assert r.state == TIPOVER_REPORTED
+    assert sum(s.startswith("CONFIRM") for s in SENT) == 1
+
+
 def test_reset_after_report():
     """신고 완료 후 리셋하면 평상시로 돌아간다."""
     r = Rig()

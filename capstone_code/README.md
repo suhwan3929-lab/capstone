@@ -56,7 +56,8 @@ setx WALKER_WEBHOOK_URL "https://discord.com/api/webhooks/..."
 python tests/run_all.py
 ```
 
-31개 테스트가 1초 안에 끝난다. `tipover_monitor.py`를 건드렸다면 특히 필수다.
+현재 43개 테스트가 있다. `tipover_monitor.py`를 건드렸다면 특히 필수다.
+Discord 봇 연결과 실기 검증은 [최종 테스트.md](../최종%20테스트.md)의 P8을 따른다.
 
 ---
 
@@ -118,7 +119,7 @@ python safety_monitor.py --list-scenarios
 | `tools/replay.py` | **로그 재생 + 임계값 스윕** | rqt / PlotJuggler |
 | `tools/lidar_probe.py` | **LiDAR 프레임 포맷 판별** | 불필요 |
 | `tools/analyze_logs.py` | 시나리오별 통계 · 그래프 | rqt |
-| `tests/` | 테스트 31종 | 유지 |
+| `tests/` | 테스트 43종 | 유지 |
 | `jetson/` | ROS 2 브리지 노드 · launch | — |
 | `systemd/` | 프로세스 감시 유닛 | launch `respawn` |
 | `legacy/` | 이전 단일 프로세스 버전 (참고용) | — |
@@ -275,7 +276,7 @@ journalctl -u walker-safety -f         # fall은 아무 일 없이 계속 도는
 | **LiDAR 프레임 포맷** | ⚠ `tools/lidar_probe.py` 로 10분이면 확정 가능. 하드웨어 필요 |
 | **부저 · 진동 · LED 실배선** | ⚠ 코드는 완성. GPIO 핀 번호 확인 후 결선만 하면 된다 |
 | **취소 / SOS 물리 버튼** | ⚠ 코드는 완성. BOM에 버튼 2개 추가 필요 |
-| **연료 게이지 (INA219 등)** | ⚠ 코드는 완성. I2C 모듈 조달 필요 |
+| **전원·잔량 관리** | 65 W·40,000 mAh 보조배터리 2개로 Pi/Jetson 각각 공급. 계측 백엔드는 `null`, 잔량 기반 자동 종료는 끔. 출력 규격·케이블·실제 사용시간 확인 필요 |
 | **단차 감지 실측 검증** | ⚠ 3D PointCloud2 모드 + 아래로 틸트 장착이 전제 |
 | **듀얼 LiDAR 외부 캘리브레이션** | ❌ 미착수 (P2) |
 | **의료기기 아님 면책 · 위치정보 동의 절차** | ❌ 문서 작업 (계획서 리뷰 §4.3) |

@@ -23,7 +23,7 @@ import console  # noqa: E402
 
 console.setup()
 
-MODULES = ["test_tipover_fsm", "test_components"]
+MODULES = ["test_tipover_fsm", "test_components", "test_safety_notifications"]
 
 
 def run():

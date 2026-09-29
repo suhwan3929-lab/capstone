@@ -125,8 +125,9 @@ def _sensors_faulty(imu, gps, obs) -> bool:
     """
     if not imu.valid:
         return True
-    if config.LIDAR_SOURCE != "none" and not config.SIM_MODE and not obs.link_ok:
-        return True
+    if config.LIDAR_SOURCE != "none" and not config.SIM_MODE:
+        # UDP 하트비트는 브리지의 생존만 보장한다. 좌우 센서도 따로 확인한다.
+        return not (obs.link_ok and obs.left_ok and obs.right_ok)
     return False
 
 
@@ -170,7 +171,7 @@ def main():
         return 0
 
     if not notifier.is_configured():
-        log("⚠ 웹훅 미설정 — 판정과 현장 경고는 동작하지만 "
+        log("⚠ Discord 알림 미설정 — 판정과 현장 경고는 동작하지만 "
             "보호자 알림은 나가지 않습니다.", "ERROR")
 
     # ── 구성요소 기동 ─────────────────────────────────
@@ -246,9 +247,10 @@ def main():
             if ntrip_client.is_configured() and now - last_ntrip_note > 60:
                 last_ntrip_note = now
                 st = ntrip_client.stats()
+                age_text = "-" if st["rtcm_age"] is None else f"{st['rtcm_age']:.0f}s"
                 log(f"[NTRIP] 연결={st['connected']} 수신={st['bytes']:,}B "
                     f"재접속={st['reconnects']}회 "
-                    f"보정지연={'-' if st['rtcm_age'] is None else f'{st['rtcm_age']:.0f}s'}",
+                    f"보정지연={age_text}",
                     "INFO")
 
             if pub and tick % publish_every == 0:

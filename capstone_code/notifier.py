@@ -1,5 +1,5 @@
 """
-보호자 알림 (Discord Webhook)
+보호자 알림 (Discord Webhook / Bot REST API)
 
 이전 버전 대비 수정:
   [H1] URL 하드코딩 제거 → 환경변수 + 실제로 동작하는 유효성 검사
@@ -11,7 +11,7 @@
        보호자에게 "오차 ±2 cm"와 "오차 ±5 m"는 완전히 다른 정보다.
   [⑧] 실패 시 지수 백오프 재시도 + 오프라인 큐잉
 
-⚠ 어떤 경우에도 웹훅 URL을 로그에 출력하지 않는다.
+⚠ 웹훅 URL과 봇 토큰은 어떤 경우에도 로그에 출력하지 않는다.
 """
 import json
 import os
@@ -58,6 +58,13 @@ def is_configured() -> bool:
     """[H1] 플레이스홀더에 속지 않는 진짜 검사."""
     if not REQUESTS_AVAILABLE:
         return False
+    if config.NOTIFY_BACKEND == "bot":
+        channel = config.DISCORD_CHANNEL_ID
+        token = config.DISCORD_BOT_TOKEN
+        return (bool(token) and not any(c.isspace() for c in token)
+                and channel.isascii() and channel.isdigit() and int(channel) > 0)
+    if config.NOTIFY_BACKEND != "webhook":
+        return False
     u = config.WEBHOOK_URL
     return u.startswith("https://discord.com/api/webhooks/") and len(u) > 50
 
@@ -69,7 +76,7 @@ def start(log_callback=None):
         _emit("⚠ requests 미설치 — 외부 알림 비활성화 "
               "(pip install requests)", "ERROR")
     elif not is_configured():
-        _emit("⚠ WALKER_WEBHOOK_URL 환경변수가 없거나 형식이 올바르지 않습니다. "
+        _emit("⚠ Discord 알림 설정이 없거나 형식이 올바르지 않습니다. "
               "외부 알림이 비활성화됩니다.", "ERROR")
     if not _started:
         _started = True
@@ -101,8 +108,10 @@ def _enqueue(kind, imu, gps, age, peak_g=None, reason=None):
     item = {
         "kind": kind,
         "utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "peak_g": peak_g if peak_g is not None else (imu.accel_g if imu else None),
-        "tilt_deg": imu.tilt_deg if imu else None,
+        "peak_g": peak_g if peak_g is not None and peak_g > 0 else
+                  (imu.accel_g if imu and imu.valid else None),
+        "tilt_deg": imu.tilt_deg if imu and imu.valid else None,
+        "imu_valid": bool(imu and imu.valid),
         "lat": gps.lat if gps else None,
         "lon": gps.lon if gps else None,
         "fix_quality": gps.fix_quality if gps else 0,
@@ -231,18 +240,37 @@ def _restore_spool():
         _emit(f"스풀 복구 실패: {type(e).__name__}", "WARN")
 
 
+def _discord_post(**kwargs):
+    """두 전송 방식이 같은 큐·스풀·메시지 구성을 사용한다."""
+    if config.NOTIFY_BACKEND == "bot":
+        url = f"https://discord.com/api/v10/channels/{config.DISCORD_CHANNEL_ID}/messages"
+        auth = {"headers": {"Authorization": f"Bot {config.DISCORD_BOT_TOKEN}"}}
+    elif config.NOTIFY_BACKEND == "webhook":
+        url = config.WEBHOOK_URL
+        auth = {"params": {"wait": "true"}}
+    else:
+        raise ValueError("Unknown notification backend")
+    return requests.post(url, **auth, allow_redirects=False, **kwargs)
+
+
 def _post_with_retry(payload) -> bool:
     delay = 1.0
     for attempt in range(config.WEBHOOK_MAX_RETRY):
         try:
-            r = requests.post(config.WEBHOOK_URL, json=payload,
-                              timeout=config.WEBHOOK_TIMEOUT)
+            r = _discord_post(json=payload, timeout=config.WEBHOOK_TIMEOUT)
             if r.status_code == 429:
-                time.sleep(float(r.headers.get("Retry-After", 5)))
+                retry_after = r.headers.get("Retry-After", 5)
+                try:
+                    retry_after = r.json().get("retry_after", retry_after)
+                except (ValueError, AttributeError):
+                    pass
+                time.sleep(max(0.0, float(retry_after)))
                 continue
-            if r.ok or r.status_code == 204:
+            if 200 <= r.status_code < 300:
                 return True
             _emit(f"응답 코드 {r.status_code} (재시도 {attempt + 1})", "WARN")
+            if r.status_code in (400, 401, 403, 404):
+                return False  # 설정/권한 오류는 반복 전송으로 해결되지 않는다.
         except Exception as e:
             # ⚠ URL은 절대 로그에 남기지 않는다
             _emit(f"전송 실패 {type(e).__name__} — {delay:.0f}초 후 재시도", "WARN")
@@ -254,12 +282,11 @@ def _post_with_retry(payload) -> bool:
 def _post_image(image_bytes, item):
     try:
         files = {
-            "file": ("map.png", image_bytes, "image/png"),
+            "files[0]": ("map.png", image_bytes, "image/png"),
             "payload_json": (None, json.dumps(
                 {"content": "📍 사고 지점 지도"}), "application/json"),
         }
-        requests.post(config.WEBHOOK_URL, files=files,
-                      timeout=config.WEBHOOK_TIMEOUT * 2)
+        _discord_post(files=files, timeout=config.WEBHOOK_TIMEOUT * 2)
     except Exception:
         pass        # 지도는 부가정보 — 실패해도 무시
 
@@ -281,7 +308,7 @@ def _build_payload(item):
         KIND_PRELIM:  ("⚠️ **[예비] 강한 충격 감지**", 16753920,
                        "판정 중입니다. 확정/해제 알림이 곧 이어집니다."),
         KIND_CONFIRM: ("🚨 **[확정] 사고 발생**", 16711680,
-                       "사용자가 응답하지 않았거나 사고를 확인했습니다."),
+                       "수동 SOS를 요청했거나, 사용자가 사고를 확인했거나 응답하지 않았습니다."),
         KIND_CANCEL:  ("✅ **[해제] 사고 아님**", 65280,
                        item.get("reason") or "정상 상태로 복귀했습니다."),
     }[kind]
@@ -295,6 +322,9 @@ def _build_payload(item):
                 "아래 시각은 **사고 발생 시각**입니다.\n" + desc)
 
     fields = [{"name": "🕒 시각 (UTC)", "value": item["utc"], "inline": True}]
+    if kind != KIND_CANCEL and item.get("imu_valid") is False:
+        fields.append({"name": "IMU 상태", "value": "데이터 없음/끊김 — 현재 자세 확인 불가",
+                       "inline": False})
 
     if item["peak_g"] is not None:
         fields.append({"name": "💥 충격량",
@@ -330,6 +360,7 @@ def _build_payload(item):
 
     return {
         "content": title,
+        "allowed_mentions": {"parse": []},
         "embeds": [{
             "title": "고령자 보행기 안전 시스템",
             "description": desc,

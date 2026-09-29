@@ -1,6 +1,6 @@
 # `notifier.py`
 
-> **한 줄:** 보호자에게 Discord Webhook으로 알림을 보낸다. 2단 전송 + 재시도 + 디스크 스풀.
+> **한 줄:** 보호자에게 Discord Webhook 또는 Bot REST API로 알림을 보낸다. 2단 전송 + 재시도 + 디스크 스풀.
 > **계층:** 알림 (안전 필수) | **의존:** `config`, `schema`, `states`, `requests`(선택)
 
 ---
@@ -8,7 +8,7 @@
 ## 무엇을 하는가
 
 ```python
-is_configured()                          # 웹훅 URL이 진짜로 유효한가
+is_configured()                          # 전송 방식별 설정/의존성이 갖춰졌는가 (인증 성공 보장은 아님)
 start(log_callback)                      # 워커 스레드 + 스풀 복구
 send_preliminary(imu, gps, age)          # 충격 감지 즉시 — 예비 알림
 send_confirmed(imu, gps, age, peak_g)    # 전도 확정 — 본 신고
@@ -52,9 +52,26 @@ def is_configured():
 `"https://discord.com/api/webhooks/..."` 가 truthy라 **가드가 절대 발동하지 않았다.**
 미설정 상태에서 사고가 나면 경고 대신 잘못된 URL로 POST를 시도하고 실패 로그만 남겼다.
 
+### 봇 방식
+
+`WALKER_NOTIFY_BACKEND=bot`, `DISCORD_BOT_TOKEN`, `DISCORD_CHANNEL_ID`를 환경변수로 지정한다.
+기본값 `webhook`은 기존 `WALKER_WEBHOOK_URL` 설정을 사용한다. 자동으로 둘 다 보내거나
+한 방식 실패 시 다른 방식으로 전환하지 않는다. 봇 방식은 API v10 채널 메시지 생성 요청에
+`Authorization: Bot ...`를 붙이며, 별도 Gateway 연결/명령 수신 프로세스가 없다.
+
+두 방식 모두 예비·확정·해제 메시지와 후속 지도 첨부를 지원한다. HTTP 429는 서버의
+대기 시간을 적용하고 400/401/403/404는 설정 확인이 필요하므로 즉시 실패 처리한다.
+확정 알림 스풀은 전송 실패 시 남기고 다음 기동에서 복원한다.
+
+IMU가 무효인 SOS도 전송하며, 무효 자세값은 메시지에서 제외하고 IMU 상태를 표시한다.
+`신고 완료`는 큐 등록을 뜻하며, 수신처 확인이나 전송 성공 로그와 구분한다.
+
+설치·권한·채널 선택·단독 시험은 [최종 테스트.md](../../최종%20테스트.md)의 P8 참조.
+`python tools/discord_test.py --send`는 실제 메시지를 한 건 보내지만, 기존 스풀은 복원하지 않는다.
+
 ## 고칠 때 주의
 
-- ⚠ **웹훅 URL을 로그에 절대 출력하지 말 것.** 예외 메시지에도 포함되지 않게
+- ⚠ **웹훅 URL·봇 토큰을 로그에 절대 출력하지 말 것.** 예외 메시지에도 포함되지 않게
   `type(e).__name__` 만 찍는다. 유출되면 제3자가 실시간 위치를 수신할 수 있다.
 - ⚠ **`send_*()` 는 큐에 넣기만 하고 즉시 반환한다.** 판정 루프를 멈추면 안 되기 때문이다.
   실제 전송은 워커 스레드가 한다.
