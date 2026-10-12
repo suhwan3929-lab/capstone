@@ -1,5 +1,10 @@
 # `sensors/imu_sensor.py`
 
+<!-- project-status:2026-10-12:start -->
+> 갱신: 2026-10-12 · [진행 현황·확인 범위](../progress_2026-10-12.md)
+> 시뮬레이션·드라이버 수신·실제 장착 시험의 증거를 구분한다. 최신 Git 여부만으로 센서 설정과 장치 배포 완료를 보장하지 않는다.
+<!-- project-status:2026-10-12:end -->
+
 > **한 줄:** EBIMU-9DOFV6 순수 드라이버. **판정 로직은 여기 없다.**
 > **계층:** 센서 드라이버 | **의존:** `config`, `schema`, `states`, `pyserial`(선택)
 

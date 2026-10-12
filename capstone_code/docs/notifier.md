@@ -1,5 +1,10 @@
 # `notifier.py`
 
+<!-- project-status:2026-10-12:start -->
+> 갱신: 2026-10-12 · [진행 현황·확인 범위](progress_2026-10-12.md)
+> 기본 실행·장치 환경 확인 이후 실제 출력·버튼·보호자 수신·전원 측정은 각각 실기 증거로 확인한다.
+<!-- project-status:2026-10-12:end -->
+
 > **한 줄:** 보호자에게 Discord Webhook 또는 Bot REST API로 알림을 보낸다. 2단 전송 + 재시도 + 디스크 스풀.
 > **계층:** 알림 (안전 필수) | **의존:** `config`, `schema`, `states`, `requests`(선택)
 

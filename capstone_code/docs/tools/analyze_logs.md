@@ -1,5 +1,10 @@
 # `tools/analyze_logs.py`
 
+<!-- project-status:2026-10-12:start -->
+> 갱신: 2026-10-12 · [진행 현황·확인 범위](../progress_2026-10-12.md)
+> 실행·Ubuntu 원격접속·Git 배포의 최신 진행 기록을 연결했다. 기존 날짜별 검토·시험 결과와 아직 미확인인 실기 항목을 구분한다.
+<!-- project-status:2026-10-12:end -->
+
 > **한 줄:** 시나리오별 충격량·기울기 분포를 표와 그래프로 보여준다.
 > **계층:** 분석 도구 | **의존:** `config`, `console`, `pandas`, `matplotlib`
 

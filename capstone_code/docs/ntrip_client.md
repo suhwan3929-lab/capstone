@@ -1,5 +1,10 @@
 # `ntrip_client.py`
 
+<!-- project-status:2026-10-12:start -->
+> 갱신: 2026-10-12 · [진행 현황·확인 범위](progress_2026-10-12.md)
+> 실행·Ubuntu 원격접속·Git 배포의 최신 진행 기록을 연결했다. 기존 날짜별 검토·시험 결과와 아직 미확인인 실기 항목을 구분한다.
+<!-- project-status:2026-10-12:end -->
+
 > **한 줄:** RTK 보정정보(RTCM3)를 캐스터에서 받아 ZED-F9P로 흘려보낸다.
 > **계층:** 부가 | **의존:** `config`, `sensors.gps_sensor`
 

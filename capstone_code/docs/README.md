@@ -1,5 +1,10 @@
 # 코드 문서 색인
 
+<!-- project-status:2026-10-12:start -->
+> 갱신: 2026-10-12 · [진행 현황·확인 범위](progress_2026-10-12.md)
+> 실행·Ubuntu 원격접속·Git 배포의 최신 진행 기록을 연결했다. 기존 날짜별 검토·시험 결과와 아직 미확인인 실기 항목을 구분한다.
+<!-- project-status:2026-10-12:end -->
+
 > `capstone_code/` 의 모든 `.py` 파일에 대한 설명서.
 > 각 문서는 **무엇을 하는가 / 왜 존재하는가 / 고칠 때 주의**를 담고 있다.
 
@@ -78,7 +83,7 @@
 | [tools/replay.md](tools/replay.md) | `tools/replay.py` | **로그 재생 + 임계값 스윕** |
 | [tools/lidar_probe.md](tools/lidar_probe.md) | `tools/lidar_probe.py` | LiDAR 포맷 판별 |
 | [tools/analyze_logs.md](tools/analyze_logs.md) | `tools/analyze_logs.py` | 분포 통계 · 그래프 |
-| [tests/README.md](tests/README.md) | `tests/*.py` | 테스트 31종 |
+| [tests/README.md](tests/README.md) | `tests/*.py` | 등록 테스트와 실행 결과는 tests/README.md 참조 |
 | [jetson/lidar_bridge_node.md](jetson/lidar_bridge_node.md) | `jetson/lidar_bridge_node.py` | ROS 2 브리지 + 단차 감지 |
 
 ---
@@ -109,3 +114,9 @@
 - **틀린 계기판은 없는 계기판보다 나쁘다.** 측정 못 하면 "측정 안 됨"이라고 쓴다.
 - **미탐 > 오탐.** 전도를 놓치는 것이 헛울리는 것보다 위험하다. 단, 오경보 한 번에
   보호자 신뢰가 무너지므로 **취소 수단**으로 균형을 잡는다.
+
+## 실행·운영 기록
+
+- [2026-10-12 진행 현황](progress_2026-10-12.md): 확인된 결과, 과거 기록, 미확인 항목.
+- [Ubuntu 원격접속](remote_access.md): OpenSSH, Connection refused, 자동 업데이트 잠금.
+- [Git 업데이트 판단](git_update.md): fetch/status, 브랜치 차이, 파일 복사 배포와 pull의 차이.
