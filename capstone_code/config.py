@@ -279,20 +279,21 @@ NTRIP_MAX_BACKOFF = 60.0
 
 # ══════════════════════════════════════════════════════════
 # 배터리
-#   ⚠ Raspberry Pi 5에는 BAT0 sysfs가 없다. 별도 연료 게이지가 필요하다.
-#     붙이기 전까지 화면에는 "측정 안 됨"이 표시된다 (100%로 거짓 표시하지 않는다).
+#   현재 구성: 65 W / 40,000 mAh 보조배터리 2개로 Pi와 Jetson 각각 공급.
+#   보조배터리 내부 잔량을 읽는 통신/계측 장치가 없으므로 None으로 표시한다.
+#   안정화된 USB/PD 출력 전압으로 내부 셀 잔량을 추정하지 않는다.
 # ══════════════════════════════════════════════════════════
-BATTERY_BACKEND = "auto"   # "auto" | "ina219" | "max17043" | "sysfs" | "null"
+BATTERY_BACKEND = "null"   # 현재 보조배터리 구성. 계측 추가 시에만 다른 백엔드 선택.
 BATTERY_I2C_BUS = 1
 BATTERY_INA219_ADDR = 0x40
 BATTERY_MAX17043_ADDR = 0x36
-BATTERY_CELLS = 4          # 3S 또는 4S
+BATTERY_CELLS = 4          # 이전 셀 팩 계측용 값. null 백엔드에서는 사용하지 않음.
 BATTERY_SHUNT_OHM = 0.1
 
 BATTERY_WARN_PCT = 20.0
 BATTERY_CRITICAL_PCT = 10.0
 BATTERY_SHUTDOWN_PCT = 5.0
-BATTERY_SHUTDOWN_ENABLED = False   # 실기에서 True. 전원 차단 전 안전 종료.
+BATTERY_SHUTDOWN_ENABLED = False   # 보조배터리 잔량 연동 없음. 실기에서도 유지.
 BATTERY_POLL_SEC = 10.0
 
 # ══════════════════════════════════════════════════════════
@@ -312,12 +313,15 @@ STATUS_HZ = 10             # safety_monitor → ui 갱신 주기
 SCHEMA_VERSION = 1         # 패킷 스키마 버전 (schema.py와 함께 올릴 것)
 
 # ══════════════════════════════════════════════════════════
-# 알림 (Discord Webhook)
+# 알림 (Discord Webhook 또는 Bot REST API)
 #   ⚠ URL을 여기 적지 말 것. 환경변수로만 받는다.
 #       Windows : setx WALKER_WEBHOOK_URL "https://discord.com/api/webhooks/..."
 #       Linux   : /etc/walker/secrets.env  (systemd EnvironmentFile, 권한 600)
 # ══════════════════════════════════════════════════════════
 WEBHOOK_URL = os.environ.get("WALKER_WEBHOOK_URL", "").strip()
+NOTIFY_BACKEND = os.environ.get("WALKER_NOTIFY_BACKEND", "webhook").strip().lower()
+DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
+DISCORD_CHANNEL_ID = os.environ.get("DISCORD_CHANNEL_ID", "").strip()
 WEBHOOK_TIMEOUT = 5.0
 WEBHOOK_MAX_RETRY = 6      # 지수 백오프: 1,2,4,8,16,32초
 MAP_FETCH_TIMEOUT = 8.0

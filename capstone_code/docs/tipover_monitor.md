@@ -1,5 +1,10 @@
 # `tipover_monitor.py`
 
+<!-- project-status:2026-10-12:start -->
+> 갱신: 2026-10-12 · [진행 현황·확인 범위](progress_2026-10-12.md)
+> 기본 실행과 배포 상태를 연결했다. 가상 값·표시 데이터·알림 큐 상태를 실제 센서 성능이나 보호자 수신 완료로 판정하지 않는다.
+<!-- project-status:2026-10-12:end -->
+
 > **한 줄:** 보행기 전도 판정 FSM. **이 시스템의 심장.**
 > **계층:** 판정 (안전 필수) | **의존:** `config`, `notifier`, `buttons`, `schema`, `sensors.*_source`, `states`
 

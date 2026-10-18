@@ -156,7 +156,19 @@ class TipoverMonitor:
             self._reset()
             return
 
-        # IMU가 죽었으면 판정을 진행할 수 없다. 진행 중이던 판정은 유지한다.
+        # 이미 확정된 사건은 IMU 신선도와 무관하게 전달한다.
+        # SOS 직후 IMU가 끊겨도 신고가 여기서 막혀서는 안 된다.
+        if self.state == TIPOVER_CONFIRMED:
+            if not self.alert_sent:
+                notifier.send_confirmed(imu, gps, gps_source.position_age(),
+                                        self._peak_g)
+                with self._lock:
+                    self.alert_sent = True
+                    self.ask_deadline = None
+            self._goto(TIPOVER_REPORTED)
+            return
+
+        # IMU가 죽었으면 새로운 자동 판정은 진행하지 않는다.
         if not imu.valid:
             return
 
@@ -226,16 +238,6 @@ class TipoverMonitor:
                 self._consume_cmd()
                 self._emit(f"사고 확정 ({why}) — 보호자에게 신고합니다", "ERROR")
                 self._goto(TIPOVER_CONFIRMED)
-
-        # ── 사고 확정 → 신고 ──────────────────────────
-        elif st == TIPOVER_CONFIRMED:
-            if not self.alert_sent:
-                notifier.send_confirmed(imu, gps, gps_source.position_age(),
-                                        self._peak_g)
-                with self._lock:
-                    self.alert_sent = True
-                    self.ask_deadline = None
-            self._goto(TIPOVER_REPORTED)
 
         # ── 신고 완료 (사용자 리셋 대기) ──────────────
         elif st == TIPOVER_REPORTED:

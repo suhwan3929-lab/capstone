@@ -1,5 +1,12 @@
 # 고령자 보행기 안전 보조 시스템 — 소프트웨어
 
+> 최신 정리: [2026-10-18 진행 현황](docs/progress_2026-10-18.md). 준비한 기능·과거 결과·실기 미확인을 구분한다.
+
+<!-- project-status:2026-10-12:start -->
+> 갱신: 2026-10-12 · [진행 현황·확인 범위](docs/progress_2026-10-12.md)
+> 실행·Ubuntu 원격접속·Git 배포의 최신 진행 기록을 연결했다. 기존 날짜별 검토·시험 결과와 아직 미확인인 실기 항목을 구분한다.
+<!-- project-status:2026-10-12:end -->
+
 **구성: Jetson = ROS 2 (벤더 드라이버), Pi = 순수 Python, 둘 사이는 UDP.**
 결정 근거와 이행 계획은 [`../코드_리뷰.md`](../코드_리뷰.md) §4 참고.
 
@@ -24,31 +31,51 @@
 
 ---
 
-## 빠른 시작
+## 빠른 시작 — Ubuntu Pi / 개발 PC
+
+`.py`가 텍스트 편집기로 열리는 것은 정상이다. 실행은 터미널에서 한다.
+먼저 `run_dev.py`가 있는 `capstone_code` 폴더로 이동하고 Python 버전을 확인한다.
+Ubuntu Pi의 기록된 Python 3.12를 우선 사용하며, 다른 버전의 호환성은 해당 체크아웃에서 검증한다.
 
 ```bash
-pip install -r requirements.txt
-cp config_local.py.example config_local.py
+python3 --version
+sudo apt update
+sudo apt install -y python3-pip python3-venv python3-tk
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install pyserial requests numpy tkintermapview
+python run_dev.py --sim --scenario normal_walk --no-alert
 ```
 
-**하드웨어가 없어도 전체 시스템이 돌아간다.** 8인 팀에 센서는 한 세트뿐이므로
-나머지 인원은 시뮬레이터로 개발한다.
+위 apt 명령은 Ubuntu에서 실행한다. 이미 준비된 `/opt/walker/venv`를 쓰는 장치는
+해당 Python을 사용하고 새 `.venv`와 혼용하지 않는다.
+기본 정상 보행은 가상 센서 값이며 실제 IMU/GPS/LiDAR 시험을 대신하지 않는다.
+`--no-alert`는 부저·LED 등 경보 출력을 끄며, 웹훅/봇의 모든 네트워크 전송을 끄는 옵션은 아니다.
+첫 실행은 `normal_walk`로 확인하고 실제 보호자 알림 설정은 별도 시험한다.
+
+일반 SSH처럼 GUI 화면이 없는 경우:
 
 ```bash
-python run_dev.py --sim --scenario tipover_front
+python run_dev.py --sim --scenario normal_walk --no-alert --no-ui
 ```
 
-하드웨어가 있으면 `config_local.py`에서 포트만 맞추고:
+GUI를 보려면 Pi의 로그인된 데스크톱/RDP 터미널에서 `--no-ui` 없이 실행한다.
+종료는 Ctrl+C다. 다음 접속 때는 같은 폴더에서 `source .venv/bin/activate` 후 실행한다.
+GPIO·I2C와 분석용 추가 패키지는 해당 시험 단계에서 설치한다.
+
+실센서 실행은 `config_local.py`의 장치별 포트와 LiDAR 소스를 확인한 뒤 `--sim`, `--scenario`를 빼고 진행한다.
+기존 개인 설정을 초기화하지 않는다. 템플릿 복사가 필요하면 파일이 없을 때만 수행한다.
 
 ```bash
-python run_dev.py
+if [ ! -e config_local.py ]; then
+    cp config_local.py.example config_local.py
+fi
+python run_dev.py --no-alert
 ```
 
-웹훅 URL은 **소스에 적지 말고** 환경변수로 넘긴다.
-
-```bash
-setx WALKER_WEBHOOK_URL "https://discord.com/api/webhooks/..."
-```
+SSH 설치·APT 잠금은 [Ubuntu 원격접속](docs/remote_access.md),
+업데이트 판단은 [Git 배포 확인](docs/git_update.md)을 따른다.
+비밀값은 환경변수 또는 로컬 비밀 설정 파일에서 주입하고 소스/문서에 실제 값을 적지 않는다.
 
 ### 코드를 고쳤다면 반드시
 
@@ -56,7 +83,8 @@ setx WALKER_WEBHOOK_URL "https://discord.com/api/webhooks/..."
 python tests/run_all.py
 ```
 
-31개 테스트가 1초 안에 끝난다. `tipover_monitor.py`를 건드렸다면 특히 필수다.
+현재 등록 테스트 함수 정적 집계는 43개다. 실행 결과의 통과/실패 수를 별도로 기록한다. `tipover_monitor.py`를 건드렸다면 특히 필수다.
+Discord 봇 연결과 실기 검증은 [최종 테스트.md](../최종%20테스트.md)의 P8을 따른다.
 
 ---
 
@@ -118,7 +146,7 @@ python safety_monitor.py --list-scenarios
 | `tools/replay.py` | **로그 재생 + 임계값 스윕** | rqt / PlotJuggler |
 | `tools/lidar_probe.py` | **LiDAR 프레임 포맷 판별** | 불필요 |
 | `tools/analyze_logs.py` | 시나리오별 통계 · 그래프 | rqt |
-| `tests/` | 테스트 31종 | 유지 |
+| `tests/` | 테스트 43종 | 유지 |
 | `jetson/` | ROS 2 브리지 노드 · launch | — |
 | `systemd/` | 프로세스 감시 유닛 | launch `respawn` |
 | `legacy/` | 이전 단일 프로세스 버전 (참고용) | — |
@@ -275,7 +303,7 @@ journalctl -u walker-safety -f         # fall은 아무 일 없이 계속 도는
 | **LiDAR 프레임 포맷** | ⚠ `tools/lidar_probe.py` 로 10분이면 확정 가능. 하드웨어 필요 |
 | **부저 · 진동 · LED 실배선** | ⚠ 코드는 완성. GPIO 핀 번호 확인 후 결선만 하면 된다 |
 | **취소 / SOS 물리 버튼** | ⚠ 코드는 완성. BOM에 버튼 2개 추가 필요 |
-| **연료 게이지 (INA219 등)** | ⚠ 코드는 완성. I2C 모듈 조달 필요 |
+| **전원·잔량 관리** | 65 W·40,000 mAh 보조배터리 2개로 Pi/Jetson 각각 공급. 계측 백엔드는 `null`, 잔량 기반 자동 종료는 끔. 출력 규격·케이블·실제 사용시간 확인 필요 |
 | **단차 감지 실측 검증** | ⚠ 3D PointCloud2 모드 + 아래로 틸트 장착이 전제 |
 | **듀얼 LiDAR 외부 캘리브레이션** | ❌ 미착수 (P2) |
 | **의료기기 아님 면책 · 위치정보 동의 절차** | ❌ 문서 작업 (계획서 리뷰 §4.3) |

@@ -28,3 +28,14 @@ LIDAR_SOURCE = "serial"
 # tools/analyze_logs.py 결과로 확정하기 전까지 임시 조정용
 # IMPACT_THRESHOLD_G = 2.8
 # FALL_TILT_DEG = 60.0
+
+# ── Discord 신고 ────────────────────────────────
+# 기본은 webhook. 봇을 쓸 때 아래 환경변수를 설정한다.
+# WALKER_NOTIFY_BACKEND=bot
+# DISCORD_BOT_TOKEN, DISCORD_CHANNEL_ID는 환경변수 또는 /etc/walker/secrets.env.
+# 토큰/웹훅 URL을 이 파일에 적지 않는다. 절차: ../최종 테스트.md §P8.
+
+# ── 보조배터리 2개 (각각 65 W / 40,000 mAh) ───────
+BATTERY_BACKEND = "null"
+BATTERY_SHUTDOWN_ENABLED = False
+# Pi/Jetson 배터리 잔량은 각 배터리 표시로 확인. 자세한 전원 시험은 ../최종 테스트.md.

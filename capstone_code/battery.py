@@ -69,7 +69,8 @@ def start(log_callback=None) -> bool:
         _state["backend"] = backend.name
     if backend.name == "null":
         _emit("측정 수단 없음 — 잔량은 '측정 안 됨'으로 표시됩니다. "
-              "실기에는 연료 게이지(INA219/MAX17043)를 반드시 달 것.", "WARN")
+              "현재 보조배터리 구성에서는 각 배터리 표시와 운전 시간을 확인하고 "
+              "전원이 끊기기 전에 두 보드를 정상 종료하세요.", "INFO")
     else:
         _emit(f"백엔드: {backend.name}", "SYSTEM")
     _running = True

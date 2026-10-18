@@ -1,6 +1,11 @@
 # `tests/` — 테스트 스위트
 
-> **31종. 전체가 1초 안에 끝난다.**
+<!-- project-status:2026-10-12:start -->
+> 갱신: 2026-10-12 · [진행 현황·확인 범위](../progress_2026-10-12.md)
+> 등록 함수 정적 집계와 실행 통과 수를 구분한다. 과거 테스트 수는 해당 코드 버전의 기록이며 실기 성공을 보장하지 않는다.
+<!-- project-status:2026-10-12:end -->
+
+> **등록 test_* 함수 정적 집계 43개 (2026-10-12). 실행 통과 수는 별도이며 실제 하드웨어·Discord 수신 확인도 별도다.**
 > **코드를 고쳤으면 이걸 먼저 돌릴 것. 특히 `tipover_monitor.py` 를 건드렸다면 필수.**
 
 ---
@@ -22,7 +27,7 @@ pytest tests/                 # pytest가 있으면 그대로 동작
 
 ---
 
-## `tests/test_tipover_fsm.py` — 전도 판정 FSM (12종)
+## `tests/test_tipover_fsm.py` — 전도 판정 FSM (14종)
 
 **가상 시계를 주입**해 실시간을 기다리지 않는다. 20초짜리 시나리오가 수 ms에 끝난다.
 
@@ -46,6 +51,8 @@ class Rig:
 | `test_dead_imu_does_not_advance_fsm` | 죽은 센서로 확정이 나가지 않는다 |
 | `test_reset_after_report` | 신고 후 리셋 |
 | `test_confirm_sends_exactly_once` | 같은 사고로 두 번 신고하지 않는다 |
+| `test_sos_reports_once_with_dead_imu` | IMU 단절 상태의 SOS도 확정 알림 큐에 한 번 등록 |
+| `test_confirmed_event_survives_imu_loss_before_delivery` | 확정 직후 IMU가 끊겨도 이미 확정된 신고는 전달 |
 
 **굵게 표시된 4개는 실제로 발생했던 버그의 회귀 테스트다.** 이 테스트가 깨지면
 과거 버그가 되살아난 것이므로 반드시 원인을 찾을 것.
@@ -78,8 +85,23 @@ def wait_for(predicate, timeout=3.0, interval=0.02)
 
 ## 테스트를 추가할 때
 
+`tests/test_safety_notifications.py`의 10종은 LiDAR 좌우/링크 고장, 비활성 모드,
+Discord 봇·웹훅 요청, 429 재시도, 인증 실패 시 스풀 보존, IMU 없는 SOS부터
+전송까지의 경로, 비밀값 로그 차단과 리다이렉트 거부를 확인한다.
+HTTP는 모의 객체로 대체하므로 실제 메시지를 발송하지 않는다.
+
 - ⚠ **회귀 테스트에는 "무엇이 깨졌었는지"를 docstring에 남길 것.**
   숫자만 있는 테스트는 반년 뒤에 아무도 왜 있는지 모른다.
 - ⚠ 포트를 쓰는 테스트는 **실제 포트와 다른 번호**를 쓸 것 (19100번대).
 - ⚠ `config` 값을 바꿨으면 테스트 끝에 되돌릴 것. 모듈 전역이라 다음 테스트에 샌다.
 - 새 테스트 모듈을 만들면 `run_all.py` 의 `MODULES` 리스트에 추가.
+
+## 현재 러너 등록 모듈
+
+아래는 소스 정적 집계이며 이번 갱신에서 테스트를 실행한 결과가 아니다.
+
+- `test_tipover_fsm`: 14개
+- `test_components`: 19개
+- `test_safety_notifications`: 10개
+
+기존 14/19/10개 설명은 해당 초기 모듈 구성을 설명한다. 추가 테스트와 현재 집계는 위 목록을 따른다.
