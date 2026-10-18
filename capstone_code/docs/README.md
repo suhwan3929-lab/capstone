@@ -117,6 +117,8 @@
 
 ## 실행·운영 기록
 
+- [2026-10-18 진행 정리](progress_2026-10-18.md): 센서·GUI·Discord·자동 실행·유선 LAN과 실제 확인 범위.
+
 - [2026-10-12 진행 현황](progress_2026-10-12.md): 확인된 결과, 과거 기록, 미확인 항목.
 - [Ubuntu 원격접속](remote_access.md): OpenSSH, Connection refused, 자동 업데이트 잠금.
 - [Git 업데이트 판단](git_update.md): fetch/status, 브랜치 차이, 파일 복사 배포와 pull의 차이.
