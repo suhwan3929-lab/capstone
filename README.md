@@ -18,3 +18,5 @@ Jetson은 ROS 2 LiDAR 처리, Raspberry Pi는 Python 안전 감시와 대시보�
 이번 진행 정리에는 Discord 시험·자동 실행·유선 LAN 준비를 포함한다. 상위 작업 원본에만 있는 후속 코드와 장치 적용은 보고서에서 구분한다.
 
 **현재 게시 기준은 main이다.** 2026-10-18 사용자 요청에 따라 기존 작업 브랜치의 변경을 main으로 반영한다. 과거 브랜치 기록과 소스/장치 적용 범위는 [Git 배포 안내](capstone_code/docs/git_update.md)를 따른다.
+
+main은 PR과 쓰기 권한 리뷰어 1명의 승인이 필요하다. [반영 대기 PR #1](https://github.com/suhwan3929-lab/capstone/pull/1)은 테스트 43개를 통과했으며 현재 승인 대기다. 직접 push와 병합 시도는 보호 규칙으로 거부돼 아직 원격 main에는 반영되지 않았다.
