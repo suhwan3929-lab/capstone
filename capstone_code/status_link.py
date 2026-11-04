@@ -16,9 +16,11 @@ import json
 import socket
 import threading
 import time
+import uuid
 
 import config
 from schema import SystemStatus
+from stream_order import StreamOrder
 
 
 class StatusPublisher:
@@ -28,15 +30,17 @@ class StatusPublisher:
         self.addr = addr or config.UDP_STATUS_ADDR
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._seq = 0
+        self._session = uuid.uuid4().hex
 
     def publish(self, status: SystemStatus):
         self._seq += 1
         status.seq = self._seq
+        status.session = self._session
         status.t = time.time()
         d = status.to_dict()
         d["v"] = config.SCHEMA_VERSION
         try:
-            self._sock.sendto(json.dumps(d).encode("utf-8"), self.addr)
+            self._sock.sendto(json.dumps(d, separators=(",", ":")).encode("utf-8"), self.addr)
         except OSError:
             pass          # UI가 없어도 safety_monitor는 계속 동작해야 한다
 
@@ -57,6 +61,7 @@ class StatusSubscriber:
         self._arrived = 0.0
         self._seq = 0
         self._running = False
+        self._order = StreamOrder(2.0)
 
     def start(self):
         self._running = True
@@ -84,11 +89,12 @@ class StatusSubscriber:
                 if d.get("v") != config.SCHEMA_VERSION:
                     continue
                 seq = d.get("seq", 0)
+                status = SystemStatus.from_dict(d)
                 with self._lock:
-                    if seq <= self._seq and (self._seq - seq) < 1000:
-                        continue      # 순서 역전 폐기 (재시작은 수용)
+                    if not self._order.accept(seq, d.get("session")):
+                        continue
                     self._seq = seq
-                    self._latest = SystemStatus.from_dict(d)
+                    self._latest = status
                     self._arrived = time.monotonic()
             except socket.timeout:
                 continue
@@ -106,13 +112,17 @@ class CommandSender:
 
     def send(self, cmd: str):
         payload = json.dumps({"v": config.SCHEMA_VERSION, "cmd": cmd}).encode()
+        sent = False
         # 사용자 취소는 놓치면 안 되는 명령이므로 3번 보낸다 (UDP 손실 대비)
         for _ in range(3):
             try:
                 self._sock.sendto(payload, self.addr)
+                sent = True
             except OSError:
                 pass
             time.sleep(0.02)
+        # 송신 성공은 모니터의 접수나 외부 알림 성공을 뜻하지 않는다.
+        return sent
 
 
 class CommandListener:

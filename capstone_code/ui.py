@@ -17,18 +17,21 @@ ui — 대시보드 (읽기 전용)
 실행: python ui.py   (safety_monitor.py 가 먼저 떠 있어야 한다)
 """
 import os
+import math
 import time
 import tkinter as tk
-from tkinter import scrolledtext
+from tkinter import messagebox, scrolledtext
 
 import config
 import console
 from states import (CMD_RESET, CMD_USER_NO, CMD_USER_YES, CONN_ERROR,
-                    CONN_STALE, TIPOVER_ASKING, TIPOVER_DISPLAY, TIPOVER_NORMAL,
+                    CONN_STALE, TIPOVER_ASKING, TIPOVER_CONFIRMED, TIPOVER_DISPLAY, TIPOVER_NORMAL,
                     TIPOVER_REPORTED, LEVEL_DANGER, LEVEL_OK, LEVEL_WARN,
                     fix_quality_name)
 from buttons import CMD_SOS
 from status_link import CommandSender, StatusSubscriber
+from lidar_preview import PreviewReceiver
+from lidar_preview_view import Lidar3DPreview
 
 console.setup()
 
@@ -38,7 +41,7 @@ try:
 except ImportError:
     MAP_AVAILABLE = False
 
-C_BG, C_CARD, C_TERM_BG, C_BORDER = "#0d0d0d", "#1a1a1a", "#050505", "#2a2a2a"
+C_BG, C_CARD, C_TERM_BG, C_BORDER = "#0d1519", "#172329", "#0a1115", "#334852"
 C_BLUE, C_GREEN, C_YELLOW, C_RED = "#00d4ff", "#00ff88", "#ffaa00", "#ff3333"
 C_GRAY, C_WHITE, C_DIMWHITE, C_HEADER_BG = "#555555", "#eeeeee", "#888888", "#111111"
 C_FLASH_ON = "#ff0000"
@@ -64,49 +67,22 @@ def dist_to_level(d):
 # 위젯
 # ══════════════════════════════════════════════════════════
 class FlashOverlay:
-    """위험 거리에서 화면 전체를 깜박이는 오버레이."""
+    """위험 배너의 테두리만 점멸한다. SOS와 점군을 가리지 않는다."""
     FLASH_MS = 300
     ALPHA = 0.35
 
-    def __init__(self, root):
+    def __init__(self, root, target):
         self.root = root
+        self.target = target
         self._active = False
         self._visible = False
         self._after = None
-        self.overlay = tk.Toplevel(root)
-        self.overlay.overrideredirect(True)
-        self.overlay.attributes("-topmost", True)
-        self.overlay.attributes("-alpha", self.ALPHA)
-        self.overlay.configure(bg=C_FLASH_ON)
-        self.overlay.withdraw()
-        self.canvas = tk.Canvas(self.overlay, bg=C_FLASH_ON, highlightthickness=0)
-        self.canvas.pack(fill=tk.BOTH, expand=True)
-        self._sync()
-        # [M1 관련] 자식 위젯의 Configure까지 올라오므로 루트 것만 처리한다
-        root.bind("<Configure>", self._on_cfg)
-
-    def _sync(self):
-        r = self.root
-        w, h = r.winfo_width(), r.winfo_height()
-        self.overlay.geometry(f"{w}x{h}+{r.winfo_x()}+{r.winfo_y()}")
-        self.canvas.delete("all")
-        self.canvas.create_text(w // 2, h // 2, text="⚠  위험 거리 감지  ⚠",
-                                fill="white", font=("Segoe UI", 36, "bold"))
-        self.canvas.create_rectangle(8, 8, w - 8, h - 8, outline="white", width=8)
-
-    def _on_cfg(self, e):
-        if self._active and e.widget is self.root:
-            self._sync()
 
     def _tick(self):
         if not self._active:
             return
-        if self._visible:
-            self.overlay.withdraw()
-        else:
-            self._sync()
-            self.overlay.deiconify()
         self._visible = not self._visible
+        self.target.config(highlightbackground=C_RED if self._visible else C_BORDER)
         self._after = self.root.after(self.FLASH_MS, self._tick)
 
     def start(self):
@@ -120,7 +96,7 @@ class FlashOverlay:
         if self._after:
             self.root.after_cancel(self._after)
             self._after = None
-        self.overlay.withdraw()
+        self.target.config(highlightbackground=C_BORDER)
         self._visible = False
 
     @property
@@ -157,31 +133,169 @@ class BatteryWidget(tk.Canvas):
                          fill="#000", font=("Segoe UI", 9, "bold"))
 
 
+class LidarPreview(tk.Canvas):
+    """센서 기준 표시 전용 평면도. 안전 판정 입력으로 사용하지 않는다."""
+    RANGE_M = 4.0
+
+    def __init__(self, parent):
+        super().__init__(parent, bg="#101b20", width=260, height=172,
+                         highlightthickness=0)
+        self._data = (None, False, False, False)
+        self.bind("<Configure>", lambda _e: self._draw())
+
+    def update_scan(self, points, ok, link_ok, simulated=False):
+        data = (points, ok, link_ok, simulated)
+        if data != self._data:
+            self._data = data
+            self._draw()
+
+    def _draw(self):
+        self.delete("all")
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 20 or h < 20:
+            return
+        points, ok, link_ok, simulated = self._data
+        ox, oy = w / 2, h - 22
+        scale = min((w - 26) / (2 * self.RANGE_M), (h - 48) / self.RANGE_M)
+        self.create_text(w / 2, 12, text="전방 ↑ · 센서 기준 · 4 m",
+                         fill=C_DIMWHITE, font=("Segoe UI", 8))
+        for distance in (1.0, 2.0, 3.0, 4.0):
+            radius = distance * scale
+            self.create_arc(ox-radius, oy-radius, ox+radius, oy+radius,
+                            start=0, extent=180, style=tk.ARC, outline="#29414a")
+            self.create_text(ox + 6, oy-radius + 6, text=f"{distance:g}m",
+                             anchor="w", fill="#66818a", font=("Segoe UI", 7))
+        for distance, color in ((config.DIST_WARN_M, "#675124"),
+                                (config.DIST_DANGER_M, "#713232")):
+            radius = distance * scale
+            self.create_arc(ox-radius, oy-radius, ox+radius, oy+radius,
+                            start=0, extent=180, style=tk.ARC, outline=color, dash=(3, 3))
+        self.create_line(ox, 25, ox, oy, fill="#29414a", dash=(3, 4))
+        self.create_polygon(ox, oy-7, ox-6, oy+5, ox+6, oy+5,
+                            fill=C_BLUE, outline="")
+        self.create_text(ox, h-8, text="센서", fill=C_BLUE, font=("Segoe UI", 8))
+        self.create_text(12, oy-6, text="좌", fill=C_DIMWHITE, font=("Segoe UI", 8))
+        self.create_text(w-12, oy-6, text="우", fill=C_DIMWHITE, font=("Segoe UI", 8))
+
+        message = None
+        if not link_ok:
+            message = "연결 끊김 · 그림 표시 불가"
+        elif not ok:
+            message = "센서 응답 없음"
+        elif points is None:
+            message = "거리만 수신 · 그림 데이터 없음"
+        elif not points:
+            message = "이번 측정에 유효 점 없음"
+        if message:
+            self.create_rectangle(8, h/2-18, w-8, h/2+18, fill="#101b20", outline="")
+            self.create_text(w/2, h/2, text=message,
+                             fill=C_RED if not (ok and link_ok) else C_DIMWHITE,
+                             font=("Segoe UI", 9))
+            return
+
+        outside = 0
+        for x, y in points:
+            distance = math.hypot(x, y)
+            if distance > self.RANGE_M:
+                outside += 1
+                continue
+            px, py = ox - y * scale, oy - x * scale
+            self.create_oval(px-2.5, py-2.5, px+2.5, py+2.5,
+                             fill=level_color(dist_to_level(distance)), outline="", tags="scan_point")
+        caption = "모의 점군" if simulated else "측정 윤곽"
+        if outside:
+            caption += f" · 4m 밖 {outside}점"
+        self.create_text(w-8, 29, text=caption, anchor="e",
+                         fill=C_YELLOW if simulated else C_BLUE, font=("Segoe UI", 8))
+
+
 class LidarCard(tk.Frame):
-    def __init__(self, parent, title, **kw):
+    def __init__(self, parent, title, show_controls=True, show_distance=True, **kw):
         super().__init__(parent, bg=C_CARD, bd=0, highlightthickness=2,
                          highlightbackground=C_BORDER, **kw)
-        tk.Label(self, text=title, bg=C_CARD, fg=C_BLUE,
-                 font=("Segoe UI", 11, "bold")).pack(pady=(14, 4))
-        self.badge = tk.Label(self, text=" 연결 대기중 ", bg=C_GRAY, fg=C_WHITE,
-                              font=("Segoe UI", 10, "bold"), padx=10, pady=3)
-        self.badge.pack(pady=(0, 10))
-        self.dist = tk.Label(self, text="-", bg=C_CARD, fg=C_GRAY,
-                             font=("Segoe UI", 28, "bold"))
-        self.dist.pack(pady=(0, 6))
-        tk.Label(self, text="최근접 거리 (m)", bg=C_CARD, fg=C_DIMWHITE,
-                 font=("Segoe UI", 9)).pack(pady=(0, 14))
+        self.show_controls = show_controls
+        self.show_distance = show_distance
+        self._title = title
+        header = tk.Frame(self, bg=C_CARD)
+        header.pack(fill=tk.X, padx=12, pady=(8, 4))
+        self.title_label = tk.Label(header, text=title, bg=C_CARD, fg=C_WHITE,
+                                    font=("Segoe UI", 13, "bold"))
+        self.title_label.pack(side=tk.LEFT)
+        self.badge = tk.Label(header, text=" 거리 대기 ", bg=C_GRAY, fg=C_WHITE,
+                              font=("Segoe UI", 10, "bold"), padx=8, pady=3)
+        self.badge.pack(side=tk.RIGHT)
+        self.preview_status = tk.Label(header, text="3D 수신 대기", bg=C_CARD,
+                                       fg=C_DIMWHITE, font=("Segoe UI", 9, "bold"))
+        self.preview_status.pack(side=tk.RIGHT, padx=(4, 8))
+        distance_row = tk.Frame(self, bg=C_CARD)
+        self.distance_row = distance_row
+        if show_distance:
+            distance_row.pack(side=tk.BOTTOM, fill=tk.X, padx=12, pady=(4, 8))
+        tk.Label(distance_row, text="장애물 거리 · 기존 판정값", bg=C_CARD, fg=C_DIMWHITE,
+                 font=("Segoe UI", 10)).pack(side=tk.LEFT)
+        self.dist = tk.Label(distance_row, text="-", bg=C_CARD, fg=C_GRAY,
+                             font=("Segoe UI", 25, "bold"))
+        self.dist.pack(side=tk.RIGHT)
+        content = tk.Frame(self, bg=C_CARD)
+        content.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 2))
+        visual = tk.Frame(content, bg=C_CARD)
+        visual.pack(fill=tk.BOTH, expand=True)
+        modes = tk.Frame(visual, bg=C_CARD)
+        if show_controls:
+            modes.pack(fill=tk.X)
+        self.mode_buttons = {}
+        for mode in ("3D", "2D"):
+            button = tk.Button(modes, text=mode, bg=C_CARD, fg=C_WHITE,
+                               font=("Segoe UI", 9, "bold"), relief=tk.FLAT,
+                               padx=12, pady=5, command=lambda m=mode: self.set_mode(m))
+            button.pack(side=tk.LEFT, padx=(0, 4))
+            self.mode_buttons[mode] = button
+        self.views = tk.Frame(visual, bg=C_CARD)
+        for text, view in (("정면", "front"), ("사선", "oblique"), ("위", "top"), ("옆", "side")):
+            tk.Button(self.views, text=text, command=lambda v=view: self.preview_3d.set_view(v),
+                      bg="#26343a", fg=C_WHITE, relief=tk.FLAT,
+                      font=("Segoe UI", 8), padx=6, pady=5).pack(side=tk.LEFT, padx=(0, 4))
+        self.display = tk.Frame(visual, bg=C_CARD)
+        self.display.pack(fill=tk.BOTH, expand=True)
+        self.preview = LidarPreview(self.display)
+        self.preview_3d = Lidar3DPreview(self.display)
+        self.set_mode("3D")
 
-    def update_card(self, d, ok, link_ok):
+    def set_mode(self, mode):
+        if mode not in ("2D", "3D"):
+            raise ValueError("Unknown LiDAR display mode")
+        self.mode = mode
+        self.title_label.config(text=f"{self._title} · {mode}")
+        self.preview.pack_forget()
+        self.preview_3d.pack_forget()
+        self.views.pack_forget()
+        for key, button in self.mode_buttons.items():
+            button.config(bg="#17576a" if key == mode else C_CARD)
+        if mode == "3D":
+            if self.show_controls:
+                self.views.pack(side=tk.BOTTOM, fill=tk.X)
+            self.preview_3d.pack(fill=tk.BOTH, expand=True)
+        else:
+            self.preview.pack(fill=tk.BOTH, expand=True)
+
+    def update_3d(self, snapshot):
+        self.preview_3d.update_snapshot(snapshot)
+        label = {"live": "3D 수신 중", "empty": "3D 유효점 없음", "stale": "3D 수신 중단",
+                 "missing": "3D 수신 대기", "unavailable": "3D 연결 확인"}.get(snapshot.status, "3D 확인 중")
+        color = C_GREEN if snapshot.status == "live" else C_YELLOW if snapshot.status in ("stale", "unavailable") else C_DIMWHITE
+        self.preview_status.config(text=label, fg=color)
+
+    def update_card(self, d, ok, link_ok, points=None, simulated=False):
+        self.preview.update_scan(points, ok, link_ok, simulated)
         if not link_ok:
-            self._flat("  링크 끊김  ", C_RED, "센서 이상")
+            self._flat(" 거리 링크 끊김 ", C_RED, "센서 이상")
             return
         if not ok:
-            self._flat("  연결 실패  ", C_RED, "연결 안됨")
+            self._flat(" 거리 센서 오류 ", C_RED, "연결 안됨")
             return
         lv = dist_to_level(d)
         color = level_color(lv)
-        self.badge.config(text=f"  {level_text(lv)}  ", bg=color,
+        self.badge.config(text=f" 거리 {level_text(lv)} ", bg=color,
                           fg="#fff" if lv == LEVEL_DANGER else "#000")
         self.config(highlightbackground=color)
         self.dist.config(text="감지 없음" if d is None else f"{d:.2f} m", fg=color)
@@ -197,34 +311,28 @@ class IMUCard(tk.Frame):
         super().__init__(parent, bg=C_CARD, bd=0, highlightthickness=2,
                          highlightbackground=C_BORDER, **kw)
         tk.Label(self, text="IMU / 전도 감지", bg=C_CARD, fg=C_BLUE,
-                 font=("Segoe UI", 11, "bold")).pack(pady=(14, 6))
+                 font=("Segoe UI", 11, "bold")).pack(pady=(8, 4))
         self.badge = tk.Label(self, text=" 연결 대기중 ", bg=C_GRAY, fg=C_WHITE,
-                              font=("Segoe UI", 13, "bold"), padx=12, pady=4)
-        self.badge.pack(pady=(0, 8))
+                              font=("Segoe UI", 12, "bold"), padx=12, pady=3)
+        self.badge.pack(pady=(0, 4))
         self.state_lbl = tk.Label(self, text="-", bg=C_CARD, fg=C_GRAY,
-                                  font=("Segoe UI", 22, "bold"))
-        self.state_lbl.pack(pady=(0, 4))
-        tk.Label(self, text="사고 상태", bg=C_CARD, fg=C_DIMWHITE,
-                 font=("Segoe UI", 9)).pack(pady=(0, 6))
+                                  font=("Segoe UI", 18, "bold"))
+        self.state_lbl.pack(pady=(0, 2))
         info = tk.Frame(self, bg=C_CARD)
-        info.pack(pady=(0, 14))
+        info.pack(pady=(0, 4))
         self.vals = {}
         for i, key in enumerate(("Roll", "Pitch", "충격")):
             tk.Label(info, text=f"{key}:", bg=C_CARD, fg=C_DIMWHITE,
-                     font=("Segoe UI", 8)).grid(row=0, column=i * 2, padx=3)
+                     font=("Segoe UI", 8)).grid(row=i, column=0, padx=3, sticky="e")
             v = tk.Label(info, text="-", bg=C_CARD, fg=C_WHITE,
                          font=("Segoe UI", 8, "bold"))
-            v.grid(row=0, column=i * 2 + 1, padx=3)
+            v.grid(row=i, column=1, padx=3, sticky="w")
             self.vals[key] = v
 
     def update_card(self, imu, tipover_state):
         if imu.status in (CONN_ERROR, CONN_STALE) or not imu.valid:
             txt = "응답 없음" if imu.status == CONN_STALE else "연결 안됨"
-            self.badge.config(text=f"  {txt}  ", bg=C_RED, fg=C_WHITE)
-            self.state_lbl.config(text=txt, fg=C_RED)
-            self.config(highlightbackground=C_RED)
-            for v in self.vals.values():
-                v.config(text="-")
+            self.set_unavailable(txt)
             return
         cfg = TIPOVER_DISPLAY.get(tipover_state)
         if cfg:
@@ -235,6 +343,13 @@ class IMUCard(tk.Frame):
         self.vals["Roll"].config(text=f"{imu.roll_deg:.1f}°")
         self.vals["Pitch"].config(text=f"{imu.pitch_deg:.1f}°")
         self.vals["충격"].config(text=f"{imu.accel_g:.2f}g")
+
+    def set_unavailable(self, text):
+        self.badge.config(text=f"  {text}  ", bg=C_RED, fg=C_WHITE)
+        self.state_lbl.config(text=text, fg=C_RED)
+        self.config(highlightbackground=C_RED)
+        for value in self.vals.values():
+            value.config(text="-")
 
 
 class GPSCard(tk.Frame):
@@ -255,6 +370,7 @@ class GPSCard(tk.Frame):
 
         self._last_pos = None
         self._last_map_t = 0.0
+        self.marker = None
         if MAP_AVAILABLE:
             self.map = tkintermapview.TkinterMapView(self, corner_radius=0)
             self.map.pack(fill=tk.BOTH, expand=True, padx=14, pady=(0, 14))
@@ -262,18 +378,15 @@ class GPSCard(tk.Frame):
             self.map.set_position(35.1595, 126.8526)
             self.marker = None
         else:
-            c = tk.Canvas(self, bg="#111", bd=0, highlightthickness=1,
-                          highlightbackground="#333")
+            c = tk.Label(self, bg="#111", fg=C_DIMWHITE, bd=0, highlightthickness=1,
+                         highlightbackground="#333", text="지도 표시 불가", wraplength=170,
+                         font=("Segoe UI", 9))
             c.pack(fill=tk.BOTH, expand=True, padx=14, pady=(0, 14))
-            c.create_text(150, 80, text="지도: pip install tkintermapview",
-                          fill=C_RED, font=("Segoe UI", 10, "bold"))
 
     def update_card(self, gps):
         if not gps.valid:
             txt = "응답 없음" if gps.status == CONN_STALE else "연결 안됨"
-            self.badge.config(text=f"  {txt}  ", bg=C_RED, fg=C_WHITE)
-            self.config(highlightbackground=C_RED)
-            self.detail.config(text="-")
+            self.set_unavailable(txt)
             return
 
         q = gps.fix_quality
@@ -292,10 +405,10 @@ class GPSCard(tk.Frame):
         self.detail.config(text=f"위성 {gps.satellites}개 · HDOP {hdop} "
                                 f"· UTC {gps.utc or '-'}")
 
-        if gps.lat is None:
-            self.coord.config(text="Lat: -   Lon: -")
+        if not gps.has_position or not q:
+            self._clear_position()
             return
-        self.coord.config(text=f"Lat: {gps.lat:.6f}   Lon: {gps.lon:.6f}")
+        self.coord.config(text=f"Lat: {gps.lat:.6f}\nLon: {gps.lon:.6f}", fg=C_WHITE)
 
         # [M2] 초당 10회 재중심 → 위치가 실제로 바뀐 경우에만, 최대 1 Hz
         if not MAP_AVAILABLE:
@@ -310,6 +423,20 @@ class GPSCard(tk.Frame):
             else:
                 self.marker.set_position(gps.lat, gps.lon)
 
+    def _clear_position(self):
+        self.coord.config(text="현재 위치 확인 불가", fg=C_GRAY)
+        if self.marker is not None:
+            self.marker.delete()
+            self.marker = None
+        self._last_pos = None
+        self._last_map_t = 0.0
+
+    def set_unavailable(self, text):
+        self.badge.config(text=f"  {text}  ", bg=C_RED, fg=C_WHITE)
+        self.config(highlightbackground=C_RED)
+        self.detail.config(text="-")
+        self._clear_position()
+
 
 class TerminalCard(tk.Frame):
     def __init__(self, parent, **kw):
@@ -322,7 +449,7 @@ class TerminalCard(tk.Frame):
                  font=("Consolas", 10, "bold")).pack(side=tk.LEFT, padx=10)
         self.txt = scrolledtext.ScrolledText(self, bg=C_TERM_BG, fg=C_GREEN,
                                              font=("Consolas", 9), wrap=tk.WORD,
-                                             state=tk.DISABLED, bd=0)
+                                             state=tk.DISABLED, bd=0, width=1, height=1)
         self.txt.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         for tag, col in (("INFO", "#00ff88"), ("WARN", "#ffaa00"),
                          ("ERROR", "#ff3333"), ("SYSTEM", "#00d4ff")):
@@ -341,95 +468,271 @@ class TerminalCard(tk.Frame):
 class Dashboard:
     REFRESH_MS = 100
 
-    def __init__(self, root):
+    def __init__(self, root, *, status_subscriber=None, command_sender=None, preview_receiver=None):
         self.root = root
         root.title("노약자 보행 보조 시스템 — 대시보드")
         root.configure(bg=C_BG)
-        root.geometry("1280x720")
-        root.minsize(1024, 600)          # [M8] 소형 터치스크린 대비
+        root.geometry("1024x600")
+        root.minsize(1024, 600)
+        fullscreen = os.environ.get("WALKER_UI_FULLSCREEN")
+        if fullscreen == "1" or (fullscreen is None and
+                root.winfo_screenwidth() == 1024 and root.winfo_screenheight() == 600):
+            root.attributes("-fullscreen", True)
 
-        self.sub = StatusSubscriber()
+        self.sub = status_subscriber if status_subscriber is not None else StatusSubscriber()
         self.sub.start()
-        self.cmd = CommandSender()
+        self.cmd = command_sender if command_sender is not None else CommandSender()
+        self.preview_sub = preview_receiver if preview_receiver is not None else PreviewReceiver(
+            port=os.environ.get("WALKER_PREVIEW_PORT", getattr(config, "UDP_PREVIEW_PORT", 9103)),
+            bind_host=os.environ.get("WALKER_PREVIEW_BIND", getattr(config, "UDP_PREVIEW_BIND", "127.0.0.1")))
+        self.preview_sub.start()
 
         self._popup = None
         self._flashing = False
         self._last_notice = None
         self._link_warned = False
+        self._reset_requested_at = None
+        self._sos_requested_at = None
+        self._sos_unconfirmed = False
+        self._details_visible = False
+        self.current_view = "front"
+        self.display_mode = "3D"
+        self.grid_size_cm = 10
 
         self._build()
         root.update_idletasks()
-        self.flash = FlashOverlay(root)
+        self.flash = FlashOverlay(root, self.status_banner)
         root.protocol("WM_DELETE_WINDOW", self._on_close)   # [M9]
+        root.bind("<F11>", self._toggle_fullscreen)
+        root.bind("<Escape>", self._escape)
+        root.bind("<Configure>", self._resize_labels, add="+")
 
         self.term.append("대시보드 시작 — safety_monitor 연결 대기", "SYSTEM")
+        if self.preview_sub.error:
+            self.term.append("3D 연결 확인 필요 · 기존 안전 감시는 독립 실행됩니다", "WARN")
         self._refresh()
 
     def _build(self):
-        hdr = tk.Frame(self.root, bg=C_HEADER_BG, height=52)
-        hdr.pack(fill=tk.X, side=tk.TOP)
-        hdr.pack_propagate(False)
-        tk.Label(hdr, text="노약자 보행 보조 시스템", bg=C_HEADER_BG, fg=C_BLUE,
-                 font=("Segoe UI", 15, "bold")).pack(side=tk.LEFT, padx=20, pady=10)
-        self.overall = tk.Label(hdr, text="●  연결 대기", bg=C_HEADER_BG, fg=C_GRAY,
-                                font=("Segoe UI", 10, "bold"))
-        self.overall.pack(side=tk.RIGHT, padx=20)
-        self.clock = tk.Label(hdr, text="", bg=C_HEADER_BG, fg=C_DIMWHITE,
-                              font=("Segoe UI", 9))
-        self.clock.pack(side=tk.RIGHT, padx=10)
-        self.batt = BatteryWidget(hdr)
-        self.batt.pack(side=tk.RIGHT, padx=15, pady=12)
-        self.health_lbl = tk.Label(hdr, text="", bg=C_HEADER_BG, fg=C_DIMWHITE,
-                                   font=("Segoe UI", 8))
-        self.health_lbl.pack(side=tk.RIGHT, padx=8)
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(3, weight=1)
+        hdr = tk.Frame(self.root, bg=C_HEADER_BG)
+        hdr.grid(row=0, column=0, sticky="ew", padx=12, pady=(6, 4))
+        hdr.columnconfigure(0, weight=1)
+        self.header_title = tk.Frame(hdr, bg=C_HEADER_BG)
+        self.header_title.grid(row=0, column=0, sticky="new")
+        tk.Label(self.header_title, text="보행기 안전 도우미", bg=C_HEADER_BG, fg=C_WHITE,
+                 font=("Segoe UI", 14, "bold")).pack(side=tk.LEFT, padx=(8, 12), pady=(4, 2))
+        self.batt = BatteryWidget(self.header_title)
+        self.batt.pack(side=tk.RIGHT, padx=8)
+        self.clock = tk.Label(hdr, text=time.strftime("%H:%M:%S"), bg="#101b20", fg="#ffffff",
+                              font=("Consolas", 30, "bold"), width=8,
+                              padx=12, pady=6, highlightthickness=1, highlightbackground=C_BORDER)
+        self.clock.grid(row=0, column=1, rowspan=2, sticky="nsew", padx=(12, 0))
+        self.scale_controls = tk.Frame(hdr, bg=C_HEADER_BG)
+        self.scale_controls.grid(row=1, column=0, sticky="w", padx=8, pady=(2, 0))
+        tk.Label(self.scale_controls, text="화면 확대", bg=C_HEADER_BG, fg=C_WHITE,
+                 font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT, padx=(0, 10))
+        self.grid_size_buttons = {}
+        for centimeters in (1, 5, 10):
+            button = tk.Button(self.scale_controls, text=f"{centimeters}cm", width=5,
+                               bg=C_CARD, fg=C_WHITE, relief=tk.FLAT,
+                               font=("Segoe UI", 10, "bold"), pady=3,
+                               command=lambda value=centimeters: self._set_grid_size_cm(value))
+            button.pack(side=tk.LEFT, padx=(0, 5))
+            self.grid_size_buttons[centimeters] = button
+        tk.Label(self.scale_controls, text="한 칸의 실제 거리", bg=C_HEADER_BG, fg=C_DIMWHITE,
+                 font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(6, 0))
+        self.header_controls = tk.Frame(hdr, bg=C_HEADER_BG)
+        self.view_buttons = {}
+        views = tk.Frame(self.header_controls, bg=C_HEADER_BG)
+        views.pack(side=tk.LEFT, padx=(0, 8))
+        for text, view in (("정면", "front"), ("사선", "oblique"), ("위", "top"), ("옆", "side")):
+            button = tk.Button(views, text=text, bg="#263d47", fg=C_WHITE,
+                               relief=tk.FLAT, font=("Segoe UI", 11), padx=8, pady=5,
+                               command=lambda v=view: self._set_view(v))
+            button.pack(side=tk.LEFT, padx=2)
+            self.view_buttons[view] = button
+        self.display_mode_buttons = {}
+        modes = tk.Frame(self.header_controls, bg=C_HEADER_BG)
+        modes.pack(side=tk.LEFT, before=views, padx=(6, 8))
+        for mode in ("3D", "2D"):
+            button = tk.Button(modes, text=mode, bg=C_CARD, fg=C_WHITE,
+                               relief=tk.FLAT, font=("Segoe UI", 11, "bold"),
+                               padx=8, pady=5, command=lambda m=mode: self._set_display_mode(m))
+            button.pack(side=tk.LEFT, padx=2)
+            self.display_mode_buttons[mode] = button
 
-        body = tk.Frame(self.root, bg=C_BG)
-        body.pack(fill=tk.BOTH, expand=True, padx=14, pady=(8, 14))
+        self.status_banner = tk.Frame(self.root, bg=C_HEADER_BG,
+                                      highlightbackground=C_BORDER, highlightthickness=2)
+        self.status_banner.grid(row=1, column=0, sticky="ew", padx=12, pady=4)
+        self.status_banner.columnconfigure(0, weight=1)
+        self.overall = tk.Label(self.status_banner, text="●  감시 연결 대기",
+                                bg=C_HEADER_BG, fg=C_GRAY, anchor="w", justify=tk.LEFT,
+                                wraplength=660, font=("Segoe UI", 15, "bold"))
+        self.overall.grid(row=0, column=0, sticky="ew", padx=12, pady=8)
+        self.health_lbl = tk.Label(self.status_banner, text="", bg=C_HEADER_BG,
+                                   fg=C_DIMWHITE, font=("Segoe UI", 10), wraplength=250)
+        self.health_lbl.grid(row=0, column=1, sticky="e", padx=10)
+        self.curb_lbl = tk.Label(self.root, text="", bg=C_BG, fg=C_DIMWHITE,
+                                 anchor="w", font=("Segoe UI", 11, "bold"))
+        self.curb_lbl.grid(row=2, column=0, sticky="ew", padx=16)
 
-        top = tk.Frame(body, bg=C_BG)
-        top.pack(fill=tk.X, pady=(0, 10))
-        top.columnconfigure(0, weight=1, uniform="t")
-        top.columnconfigure(1, weight=1, uniform="t")
-        top.rowconfigure(0, minsize=190)
-        self.lidar_l = LidarCard(top, "Left LiDAR")
-        self.lidar_l.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
-        self.lidar_r = LidarCard(top, "Right LiDAR")
-        self.lidar_r.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
-        self.curb_lbl = tk.Label(body, text="", bg=C_BG, fg=C_DIMWHITE,
-                                 font=("Segoe UI", 10, "bold"))
-        self.curb_lbl.pack(fill=tk.X, pady=(0, 6))
+        self.main_panel = tk.Frame(self.root, bg=C_BG)
+        self.main_panel.grid(row=3, column=0, sticky="nsew", padx=12, pady=4)
+        for column in (0, 1):
+            self.main_panel.columnconfigure(column, weight=1, uniform="lidar")
+        self.main_panel.rowconfigure(0, weight=1)
+        self.lidar_l = LidarCard(self.main_panel, "왼쪽 LiDAR", show_controls=False, show_distance=False)
+        self.lidar_l.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        self.lidar_r = LidarCard(self.main_panel, "오른쪽 LiDAR", show_controls=False, show_distance=False)
+        self.lidar_r.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
 
-        bot = tk.Frame(body, bg=C_BG)
-        bot.pack(fill=tk.BOTH, expand=True)
-        for i, w in ((0, 1), (1, 1), (2, 2)):
-            bot.columnconfigure(i, weight=w)
-        bot.rowconfigure(0, weight=1)
-        self.imu_card = IMUCard(bot)
+        self.details_panel = tk.Frame(self.root, bg=C_BG)
+        self.details_panel.rowconfigure(0, weight=1)
+        for column, weight in ((0, 1), (1, 1), (2, 2)):
+            self.details_panel.columnconfigure(column, weight=weight, uniform="details")
+        self.imu_card = IMUCard(self.details_panel)
         self.imu_card.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
-        self.gps_card = GPSCard(bot)
+        self.gps_card = GPSCard(self.details_panel)
         self.gps_card.grid(row=0, column=1, sticky="nsew", padx=(6, 6))
-        right = tk.Frame(bot, bg=C_BG)
-        right.grid(row=0, column=2, sticky="nsew", padx=(6, 0))
-        self.term = TerminalCard(right)
-        self.term.pack(fill=tk.BOTH, expand=True)
-        # 화면에서도 SOS를 부를 수 있어야 한다.
-        # (실기에서는 손잡이의 물리 SOS 버튼이 주 경로다 — buttons.py)
-        tk.Button(right, text="🆘  긴급 호출 (SOS)", bg="#8b0000", fg="white",
-                  font=("Segoe UI", 11, "bold"), height=2,
-                  command=self._sos).pack(fill=tk.X, pady=(6, 0))
+        self.term = TerminalCard(self.details_panel)
+        self.term.grid(row=0, column=2, sticky="nsew", padx=(6, 0))
+
+        summary = tk.Frame(self.root, bg=C_BG)
+        summary.grid(row=4, column=0, sticky="ew", padx=16, pady=3)
+        summary.columnconfigure(0, weight=1)
+        summary.columnconfigure(1, weight=1)
+        self.summary_imu = tk.Label(summary, text="전도 감시 연결 대기", bg=C_BG,
+                                     fg=C_DIMWHITE, font=("Segoe UI", 11), anchor="w")
+        self.summary_imu.grid(row=0, column=0, sticky="ew")
+        self.summary_gps = tk.Label(summary, text="현재 위치 확인 대기", bg=C_BG,
+                                     fg=C_DIMWHITE, font=("Segoe UI", 11), anchor="e")
+        self.summary_gps.grid(row=0, column=1, sticky="ew")
+        self.sos_status = tk.Label(self.root, text="", bg=C_BG, fg=C_DIMWHITE,
+                                   wraplength=990, justify=tk.LEFT, anchor="w", font=("Segoe UI", 11))
+        self.sos_status.grid(row=5, column=0, sticky="ew", padx=16, pady=(0, 3))
+        actions = tk.Frame(self.root, bg=C_BG)
+        actions.grid(row=6, column=0, sticky="ew", padx=12, pady=(2, 6))
+        actions.columnconfigure(0, weight=4, uniform="actions")
+        actions.columnconfigure(1, weight=5, uniform="actions")
+        self.details_button = tk.Button(actions, text="센서 상세 보기", bg="#29414b", fg=C_WHITE,
+                                        relief=tk.FLAT, font=("Segoe UI", 13, "bold"),
+                                        height=1, pady=10, command=self._toggle_details)
+        self.details_button.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        self.sos_button = tk.Button(actions, text="긴급 호출 · SOS", bg="#a52b3b", fg="white",
+                                    relief=tk.FLAT, font=("Segoe UI", 13, "bold"),
+                                    height=1, pady=10, command=self._sos)
+        self.sos_button.grid(row=0, column=1, sticky="ew", padx=(5, 0))
+
+        # 복귀 조작은 기본/상세 화면에서 같은 위치를 유지한다.
+        recovery_host = tk.Frame(self.root, bg=C_BG, height=1)
+        recovery_host.grid(row=7, column=0, sticky="ew", padx=12, pady=(0, 4))
+        self.recovery_panel = tk.Frame(recovery_host, bg=C_CARD, highlightthickness=1,
+                                       highlightbackground=C_RED)
+        self.recovery_label = tk.Label(
+            self.recovery_panel, text="", bg=C_CARD, fg=C_YELLOW,
+            wraplength=560, justify=tk.LEFT, font=("Segoe UI", 11))
+        self.recovery_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10, pady=6)
+        self.recovery_button = tk.Button(
+            self.recovery_panel, text="조치 완료 · 감시 재개", bg=C_GREEN, fg="#000",
+            font=("Segoe UI", 12, "bold"), height=1, padx=14, pady=8,
+            command=self._request_reset)
+        self.recovery_button.pack(side=tk.RIGHT, padx=6, pady=4)
+        self._set_display_mode("3D")
+        self._set_view("front")
+        self._set_grid_size_cm(10)
+
+    def _set_grid_size_cm(self, centimeters):
+        if centimeters not in (1, 5, 10):
+            raise ValueError("Grid size must be 1, 5 or 10 cm")
+        for card in (self.lidar_l, self.lidar_r):
+            card.preview_3d.set_grid_size_cm(centimeters)
+        self.grid_size_cm = centimeters
+        for value, button in self.grid_size_buttons.items():
+            button.config(bg="#17576a" if value == centimeters else C_CARD,
+                          relief=tk.SUNKEN if value == centimeters else tk.FLAT)
+
+    def _set_display_mode(self, mode):
+        self.lidar_l.set_mode(mode)
+        self.lidar_r.set_mode(mode)
+        self.display_mode = mode
+        for key, button in self.display_mode_buttons.items():
+            button.config(bg="#17576a" if key == mode else C_CARD)
+
+    def _set_view(self, view):
+        self._set_display_mode("3D")
+        self.lidar_l.preview_3d.set_view(view)
+        self.lidar_r.preview_3d.set_view(view)
+        self.current_view = view
+        for key, button in self.view_buttons.items():
+            button.config(bg="#17576a" if key == view else "#263d47")
+
+    def _toggle_details(self):
+        self._details_visible = not self._details_visible
+        if self._details_visible:
+            self.main_panel.grid_remove()
+            self.details_panel.grid(row=3, column=0, sticky="nsew", padx=12, pady=4)
+        else:
+            self.details_panel.grid_remove()
+            self.main_panel.grid()
+        self.details_button.config(text="기본 화면" if self._details_visible else "센서 상세 보기")
+
+    def _toggle_fullscreen(self, _event=None):
+        self.root.attributes("-fullscreen", not bool(self.root.attributes("-fullscreen")))
+
+    def _escape(self, _event=None):
+        if self._details_visible:
+            self._toggle_details()
+        else:
+            self.root.attributes("-fullscreen", False)
+
+    def _resize_labels(self, event):
+        if event.widget is self.root:
+            self.overall.config(wraplength=max(350, event.width - 330))
+            self.sos_status.config(wraplength=max(350, event.width - 40))
+
+    def _update_summary(self, status, alive):
+        if not alive or status is None:
+            self.summary_imu.config(text="전도 감시 확인 불가", fg=C_RED)
+            self.summary_gps.config(text="현재 위치 확인 불가", fg=C_RED)
+            return
+        imu_ok = status.imu.valid and status.imu.status not in (CONN_ERROR, CONN_STALE)
+        state_text = TIPOVER_DISPLAY.get(status.tipover_state, ("", "", "", "확인 중"))[3]
+        self.summary_imu.config(text="전도 감시 · " + (state_text if imu_ok else "IMU 응답 없음"),
+                                fg=C_GREEN if imu_ok and status.tipover_state == TIPOVER_NORMAL else C_YELLOW if imu_ok else C_RED)
+        gps_ok = status.gps.has_position and bool(status.gps.fix_quality)
+        self.summary_gps.config(text="현재 위치 · " + (fix_quality_name(status.gps.fix_quality) if gps_ok else "확인 불가"),
+                                fg=C_DIMWHITE if gps_ok else C_YELLOW)
 
     # ────────────────────────────────────────── 갱신
     def _refresh(self):
-        self.clock.config(text=time.strftime("%Y-%m-%d  %H:%M:%S"))
+        self.clock.config(text=time.strftime("%H:%M:%S"))
+        preview_states = {}
+        if getattr(self, "preview_sub", None) is not None:
+            for side, card in (("left", self.lidar_l), ("right", self.lidar_r)):
+                snapshot = self.preview_sub.snapshot(side)
+                preview_states[side] = snapshot.status
+                card.update_3d(snapshot)
         st, alive = self.sub.latest()
+        self._update_recovery(st, alive)
+        self._update_sos(st, alive)
+        self._update_summary(st, alive)
         if not alive:
+            self.lidar_l.update_card(None, False, False)
+            self.lidar_r.update_card(None, False, False)
+            self.imu_card.set_unavailable("감시 연결 끊김")
+            self.gps_card.set_unavailable("감시 연결 끊김")
+            self.curb_lbl.config(text="")
+            self.curb_lbl.grid_remove()
             if not self._link_warned:
                 self.term.append("⚠ safety_monitor 연결 없음 — "
                                  "python safety_monitor.py 를 실행하세요", "ERROR")
                 self._link_warned = True
             self.overall.config(text="●  모니터 연결 끊김", fg=C_RED)
             self.batt.update_battery(None, False)
-            self.health_lbl.config(text="")
+            last = time.strftime("%H:%M:%S", time.localtime(st.t)) if st and st.t else "없음"
+            self.health_lbl.config(text=f"마지막 수신 {last}", fg=C_RED)
+            self._close_popup()
             self._set_flash(False)
             self.root.after(self.REFRESH_MS, self._refresh)
             return
@@ -449,7 +752,7 @@ class Dashboard:
         if h.ntrip_connected:
             bits.append("RTK보정 " + ("정상" if h.ntrip_healthy else "지연"))
         if h.alerts_pending:
-            bits.append(f"미전송 {h.alerts_pending}건")
+            bits.append(f"알림 대기열 {h.alerts_pending}건")
         if h.battery_volts:
             bits.append(f"{h.battery_volts:.1f}V")
         self.health_lbl.config(
@@ -459,16 +762,20 @@ class Dashboard:
             else C_DIMWHITE)
 
         obs = st.obstacle
-        self.lidar_l.update_card(obs.left_m, obs.left_ok, obs.link_ok)
-        self.lidar_r.update_card(obs.right_m, obs.right_ok, obs.link_ok)
+        self.lidar_l.update_card(obs.left_m, obs.left_ok, obs.link_ok,
+                                 obs.left_points_xy, obs.preview_simulated)
+        self.lidar_r.update_card(obs.right_m, obs.right_ok, obs.link_ok,
+                                 obs.right_points_xy, obs.preview_simulated)
         # 단차(턱) — 기획 배경의 "턱 걸림"
         if obs.curb_m is not None:
+            self.curb_lbl.grid()
             kind = "내려가는 턱" if obs.curb_type == "drop" else "올라가는 턱"
             self.curb_lbl.config(
                 text=f"⚠  전방 {obs.curb_m:.2f} m  {kind} 감지",
                 fg=C_RED if obs.curb_type == "drop" else C_YELLOW)
         else:
             self.curb_lbl.config(text="")
+            self.curb_lbl.grid_remove()
 
         self.imu_card.update_card(st.imu, st.tipover_state)
         self.gps_card.update_card(st.gps)
@@ -483,18 +790,51 @@ class Dashboard:
         #      장애물에 부딪혀 넘어지면 두 경고가 동시에 발생하는데,
         #      예전에는 오버레이가 팝업을 가려 '아니오' 버튼을 누를 수 없었다.
         danger = obs.link_ok and any(
-            d is not None and d <= config.DIST_DANGER_M
-            for d in (obs.left_m, obs.right_m))
-        self._set_flash(danger and self._popup is None)
+            ok and d is not None and d <= config.DIST_DANGER_M
+            for d, ok in ((obs.left_m, obs.left_ok), (obs.right_m, obs.right_ok)))
+        # 사고 조치 버튼도 오버레이가 가리지 않게 한다.
+        self._set_flash(danger and self._popup is None
+                        and st.tipover_state not in (TIPOVER_CONFIRMED, TIPOVER_REPORTED))
 
         # 헤더 종합 상태
-        if st.tipover_state not in (TIPOVER_NORMAL,):
+        if st.tipover_state == TIPOVER_REPORTED:
+            self.overall.config(text="●  사고 확정 · 조치 확인 대기", fg=C_RED)
+        elif st.tipover_state not in (TIPOVER_NORMAL,):
             self.overall.config(text=f"●  {st.tipover_state}", fg=C_RED)
-        elif not st.imu.valid:
-            self.overall.config(text="●  IMU 이상", fg=C_RED)
         else:
-            lv = max(dist_to_level(obs.left_m), dist_to_level(obs.right_m))
-            self.overall.config(text=f"●  {level_text(lv)}", fg=level_color(lv))
+            faults = []
+            if not st.imu.valid or st.imu.status in (CONN_ERROR, CONN_STALE):
+                faults.append("IMU")
+            lidar_enabled = config.SIM_MODE or config.LIDAR_SOURCE != "none"
+            if lidar_enabled and not (obs.link_ok and obs.left_ok and obs.right_ok):
+                faults.append("LiDAR")
+            distances = [d for d, ok in ((obs.left_m, obs.left_ok),
+                                         (obs.right_m, obs.right_ok))
+                         if lidar_enabled and obs.link_ok and ok and d is not None]
+            lv = max((dist_to_level(d) for d in distances), default=LEVEL_OK)
+            if lv != LEVEL_OK:
+                text, color = level_text(lv), level_color(lv)
+                if faults:
+                    text += " · 감시 일부 불가: " + "/".join(faults)
+            elif faults:
+                text, color = "감시 일부 불가: " + "/".join(faults), C_RED
+            elif not lidar_enabled:
+                text, color = "정상 · LiDAR 미사용", C_YELLOW
+            else:
+                text, color = "정상", C_GREEN
+            preview_faults = []
+            for side, label in (("left", "왼쪽"), ("right", "오른쪽")):
+                state = preview_states.get(side)
+                if state is not None and state not in ("live", "empty"):
+                    reason = {"missing": "대기", "stale": "중단", "unavailable": "연결 확인"}.get(state, "확인 필요")
+                    preview_faults.append(label + " " + reason)
+            if preview_faults:
+                if text == "정상":
+                    text = "감시 정상"
+                text += " · 3D " + "/".join(preview_faults)
+                if color == C_GREEN:
+                    color = C_YELLOW
+            self.overall.config(text="●  " + text, fg=color)
 
         self.root.after(self.REFRESH_MS, self._refresh)
 
@@ -506,6 +846,55 @@ class Dashboard:
         elif not on and self._flashing:
             self.flash.stop()
             self._flashing = False
+
+    def _update_recovery(self, status, alive):
+        if status is None or status.tipover_state not in (TIPOVER_CONFIRMED, TIPOVER_REPORTED):
+            self.recovery_panel.pack_forget()
+            self._reset_requested_at = None
+            return
+
+        self.recovery_panel.pack(fill=tk.X, pady=(4, 0))
+        if not alive:
+            self.recovery_label.config(text="감시 연결 복구 후 조치 완료를 확인하세요.")
+            self.recovery_button.config(state=tk.DISABLED, text="감시 연결 대기")
+            return
+        if status.tipover_state == TIPOVER_CONFIRMED:
+            self.recovery_label.config(text="사고 확정 알림을 처리하고 있습니다.")
+            self.recovery_button.config(state=tk.DISABLED, text="사고 알림 처리 중")
+            return
+
+        if self._reset_requested_at is not None:
+            if time.monotonic() - self._reset_requested_at < 2.0:
+                self.recovery_label.config(text="감시 재개 요청을 보냈습니다. 상태 확인 중입니다.")
+                self.recovery_button.config(state=tk.DISABLED, text="감시 재개 요청 중…")
+                return
+            self._reset_requested_at = None
+            self.term.append("감시 재개 응답을 확인하지 못했습니다. 다시 요청할 수 있습니다.", "WARN")
+
+        self.recovery_label.config(text="조치를 마쳤다면 감시를 재개하세요.")
+        self.recovery_button.config(state=tk.NORMAL, text="조치 완료 · 감시 재개")
+
+    def _request_reset(self):
+        status, alive = self.sub.latest()
+        if not alive or status is None or status.tipover_state != TIPOVER_REPORTED:
+            self.term.append("감시 연결과 사고 처리 상태를 확인한 뒤 다시 시도하세요.", "WARN")
+            return
+        if self._reset_requested_at is not None and time.monotonic() - self._reset_requested_at < 2.0:
+            return
+        if not messagebox.askyesno(
+                "조치 완료 확인", "상황을 확인하고 조치를 마쳤나요?\n\n"
+                "확인하면 정상 감시를 재개합니다.\n기존 사고 알림과 기록은 유지됩니다.",
+                parent=self.root, default="no"):
+            return
+        # 확인창이 열린 동안 연결이나 상태가 변했을 수 있다.
+        status, alive = self.sub.latest()
+        if not alive or status is None or status.tipover_state != TIPOVER_REPORTED:
+            self.term.append("감시 상태가 바뀌었습니다. 연결과 현재 상태를 확인하세요.", "WARN")
+            return
+        self.cmd.send(CMD_RESET)
+        self._reset_requested_at = time.monotonic()
+        self.term.append("조치 완료 확인 — 정상 감시 재개 요청을 전송했습니다.", "SYSTEM")
+        self._update_recovery(status, alive)
 
     # ────────────────────────────────────────── 팝업
     def _show_popup(self, deadline):
@@ -543,8 +932,59 @@ class Dashboard:
                   command=lambda: self._answer(CMD_USER_NO)).pack(side=tk.LEFT, padx=12)
 
     def _sos(self):
-        self.cmd.send(CMD_SOS)
-        self.term.append("🆘 SOS 전송 — 즉시 보호자에게 신고합니다", "ERROR")
+        status, alive = self.sub.latest()
+        if not alive or status is None:
+            self._update_sos(status, False)
+            return
+        if status.tipover_state in (TIPOVER_CONFIRMED, TIPOVER_REPORTED):
+            self._update_sos(status, True)
+            return
+        if self._sos_requested_at is not None and time.monotonic() - self._sos_requested_at < 2.0:
+            return
+        if self.cmd.send(CMD_SOS) is False:
+            self._sos_unconfirmed = True
+            self.sos_status.config(text="SOS 요청 송신 실패 · 다시 요청하세요", fg=C_RED)
+            return
+        self._sos_requested_at = time.monotonic()
+        self._sos_unconfirmed = False
+        self.term.append("🆘 SOS 요청 전송 · 모니터 처리 확인 중", "ERROR")
+        self._update_sos(status, True)
+
+    def _update_sos(self, status, alive):
+        if not alive or status is None:
+            self.sos_button.config(state=tk.DISABLED)
+            self.sos_status.config(text="감시 연결 끊김 · 화면 SOS 사용 불가", fg=C_RED)
+            return
+        if status.tipover_state in (TIPOVER_CONFIRMED, TIPOVER_REPORTED):
+            self._sos_requested_at = None
+            self._sos_unconfirmed = False
+            self.sos_button.config(state=tk.DISABLED)
+            states = {
+                "queued": ("사고 알림 큐 접수 · 전송 대기", C_YELLOW),
+                "sending": ("사고 알림 전송 중 · 결과 대기", C_YELLOW),
+                "accepted": ("Discord 서버 접수 확인 · 보호자 열람 여부는 확인 불가", C_GREEN),
+                "failed": ("사고 알림 전송 실패 · 통신/알림 설정 확인 필요", C_RED),
+                "unconfigured": ("외부 알림 설정 없음 · 보호자에게 전송되지 않음", C_RED),
+            }
+            # 확정 직후에는 이전 사고의 전송 성공을 새 사고에 표시하지 않는다.
+            if status.tipover_state == TIPOVER_CONFIRMED:
+                text, color = "사고 확정 확인 · 알림 처리 중", C_YELLOW
+            else:
+                text, color = states.get(status.notification_state,
+                    ("사고 알림 처리 확인 · 전송 결과 확인 불가", C_YELLOW))
+            self.sos_status.config(text=text, fg=color)
+            return
+        if self._sos_requested_at is not None:
+            if time.monotonic() - self._sos_requested_at < 2.0:
+                self.sos_button.config(state=tk.DISABLED)
+                self.sos_status.config(text="SOS 요청 전송 · 모니터 처리 확인 중", fg=C_YELLOW)
+                return
+            self._sos_requested_at = None
+            self._sos_unconfirmed = True
+        self.sos_button.config(state=tk.NORMAL)
+        self.sos_status.config(
+            text="SOS 접수 응답 확인 못함 · 다시 요청 가능" if self._sos_unconfirmed else "긴급 호출 대기",
+            fg=C_RED if self._sos_unconfirmed else C_DIMWHITE)
 
     def _answer(self, cmd):
         self.cmd.send(cmd)
@@ -564,6 +1004,7 @@ class Dashboard:
     # ────────────────────────────────────────── 종료
     def _on_close(self):
         self.sub.stop()
+        self.preview_sub.stop()
         self.flash.stop()
         self._close_popup()
         self.root.after(150, self.root.destroy)

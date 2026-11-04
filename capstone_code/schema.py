@@ -27,7 +27,7 @@ from states import CONN_WAITING
 # ══════════════════════════════════════════════════════════
 @dataclass
 class ImuSample:
-    """EBIMU-9DOFV6 한 샘플. roll/pitch는 장착각 보정 후 값."""
+    """EBIMU 한 샘플. roll/pitch는 장착각 보정 후 값."""
     t_capture: float = 0.0
     roll_deg: float = 0.0
     pitch_deg: float = 0.0
@@ -78,6 +78,11 @@ class ObstacleReport:
     #: 추정한 뒤 그 평면에서 벗어난 편차로 계산한다.
     curb_m: Optional[float] = None
     curb_type: str = ""           # "" | "drop"(내려가는 턱) | "rise"(올라가는 턱)
+    # 표시 전용 축약 점군. 센서 좌표 x=전방, y=좌측, 단위 m.
+    # None=그림 미지원(구버전/시리얼), []=최신 프레임에 유효 점 없음.
+    left_points_xy: Optional[list] = None
+    right_points_xy: Optional[list] = None
+    preview_simulated: bool = False
 
     @property
     def nearest_m(self) -> Optional[float]:
@@ -114,6 +119,10 @@ class SystemStatus:
     obstacle: ObstacleReport = field(default_factory=ObstacleReport)
     health: HealthReport = field(default_factory=HealthReport)
     notice: Optional[str] = None           # UI 터미널에 띄울 한 줄
+    # Discord 서버의 접수 결과이며 보호자 열람 확인이 아니다.
+    notification_id: str = ""
+    notification_state: str = ""
+    session: Optional[str] = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -122,6 +131,7 @@ class SystemStatus:
     def from_dict(d: dict) -> "SystemStatus":
         return SystemStatus(
             seq=d.get("seq", 0),
+            session=d.get("session"),
             t=d.get("t", 0.0),
             tipover_state=d.get("tipover_state", ""),
             ask_deadline=d.get("ask_deadline"),
@@ -131,4 +141,6 @@ class SystemStatus:
             obstacle=ObstacleReport(**d.get("obstacle", {})),
             health=HealthReport(**d.get("health", {})),
             notice=d.get("notice"),
+            notification_id=d.get("notification_id", ""),
+            notification_state=d.get("notification_state", ""),
         )

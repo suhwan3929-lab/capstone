@@ -50,7 +50,8 @@ TIPOVER_DISPLAY = {
     TIPOVER_CHECKING:    ("  분석중  ",     "#ff6600", "#ffffff", "상태 판별중"),
     TIPOVER_ASKING:      ("  응답 대기  ",  "#ff00ff", "#ffffff", "사용자 확인중"),
     TIPOVER_CONFIRMED:   ("  사고 발생!  ", "#ff3333", "#ffffff", "사고 확정"),
-    TIPOVER_REPORTED:    ("  신고 완료  ",  "#ff3333", "#ffffff", "보호자 통보됨"),
+    # REPORTED는 알림 큐에 접수된 상태다. 실제 보호자 수신 완료를 뜻하지 않는다.
+    TIPOVER_REPORTED:    ("  사고 확정  ",  "#ff3333", "#ffffff", "조치 확인 대기"),
 }
 
 # ── 경고 등급 ─────────────────────────────────────────────

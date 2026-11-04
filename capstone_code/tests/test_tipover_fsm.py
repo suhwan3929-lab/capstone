@@ -244,6 +244,28 @@ def test_reset_after_report():
     assert r.state == TIPOVER_NORMAL
 
 
+def test_upright_posture_does_not_automatically_clear_confirmed_event():
+    r = Rig()
+    r.mon.submit(CMD_SOS)
+    r.feed(0.2)
+    r.feed(30.0, roll=0.0, pitch=0.0)
+    assert r.state == TIPOVER_REPORTED
+    assert sum(s.startswith("CONFIRM") for s in SENT) == 1
+
+
+def test_duplicate_resolution_command_does_not_extend_cooldown():
+    r = Rig()
+    r.mon.submit(CMD_SOS)
+    r.feed(0.2)
+    r.mon.submit(CMD_RESET)
+    r.feed(0.01)
+    rearm_at = r.mon._rearm_at
+    r.mon.submit(CMD_RESET)
+    r.feed(0.2)
+    assert r.state == TIPOVER_NORMAL
+    assert r.mon._rearm_at == rearm_at
+
+
 def test_confirm_sends_exactly_once():
     """같은 사고로 신고가 두 번 나가지 않는다."""
     r = Rig()

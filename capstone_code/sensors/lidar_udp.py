@@ -12,19 +12,39 @@ LiDAR 수신기 — Jetson의 ROS 2 브리지 노드에서 UDP로 받는다. (�
 ROS 2 전면 이행 시: 이 모듈이 그대로 서브스크라이버 콜백이 된다.
 """
 import json
+import math
 import socket
 import threading
 import time
 
 import config
 from schema import ObstacleReport
+from stream_order import StreamOrder
 
 _lock = threading.Lock()
 _state = {"left": None, "right": None, "left_ok": False, "right_ok": False,
+          "left_points_xy": None, "right_points_xy": None,
           "curb_m": None, "curb_type": "",
           "seq": 0, "arrived": 0.0, "latency": None}
 _running = False
 _log = None
+
+
+def clean_preview(points):
+    """표시용 선택 필드 오류 때문에 정상 거리 패킷을 버리지 않는다."""
+    if not isinstance(points, list):
+        return None
+    result = []
+    for point in points[:32]:
+        if not isinstance(point, (list, tuple)) or len(point) != 2:
+            continue
+        try:
+            x, y = map(float, point)
+        except (ValueError, TypeError, OverflowError):
+            continue
+        if math.isfinite(x) and math.isfinite(y) and 0 <= x <= 20 and abs(y) <= 20:
+            result.append([x, y])
+    return result if result or not points else None
 
 
 def _emit(msg, level="INFO"):
@@ -44,6 +64,8 @@ def snapshot() -> ObstacleReport:
                           left_m=s["left"], right_m=s["right"],
                           left_ok=s["left_ok"], right_ok=s["right_ok"],
                           curb_m=s["curb_m"], curb_type=s["curb_type"],
+                          left_points_xy=s["left_points_xy"] if s["left_ok"] else None,
+                          right_points_xy=s["right_points_xy"] if s["right_ok"] else None,
                           link_ok=True, latency_s=s["latency"])
 
 
@@ -85,6 +107,7 @@ def run_integrity_check(log_callback=None) -> bool:
 
 
 def _rx_loop():
+    order = StreamOrder(config.STALE_LIDAR_SEC)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("0.0.0.0", config.UDP_LIDAR_PORT))
@@ -97,26 +120,21 @@ def _rx_loop():
             pkt = json.loads(data)
             if pkt.get("v") != config.SCHEMA_VERSION:
                 continue
+            # Validate the whole status before committing its sequence/session.
+            new = pkt["seq"]
+            values = dict(
+                seq=new,
+                left=pkt["left"]["d"] if pkt["left"]["ok"] else None,
+                right=pkt["right"]["d"] if pkt["right"]["ok"] else None,
+                left_ok=bool(pkt["left"]["ok"]), right_ok=bool(pkt["right"]["ok"]),
+                left_points_xy=clean_preview(pkt["left"].get("points_xy")),
+                right_points_xy=clean_preview(pkt["right"].get("points_xy")),
+                curb_m=pkt.get("curb_m"), curb_type=pkt.get("curb_type", "") or "",
+                arrived=time.monotonic(), latency=time.time() - float(pkt["t"]))
             with _lock:
-                prev = _state["seq"]
-                new = int(pkt["seq"])
-                # 순서 역전 패킷은 버린다. 단 seq가 크게 뒤로 가면
-                # Jetson이 재시작한 것이므로 새 세션으로 받아들인다.
-                # (이 예외가 없으면 Jetson 재부팅 후 모든 패킷을 영구히 거부한다)
-                if new <= prev and (prev - new) < 1000:
+                if not order.accept(new, pkt.get("session")):
                     continue
-                _state.update(
-                    seq=new,
-                    left=pkt["left"]["d"] if pkt["left"]["ok"] else None,
-                    right=pkt["right"]["d"] if pkt["right"]["ok"] else None,
-                    left_ok=bool(pkt["left"]["ok"]),
-                    right_ok=bool(pkt["right"]["ok"]),
-                    # 구버전 브리지와도 호환되도록 .get()으로 읽는다
-                    curb_m=pkt.get("curb_m"),
-                    curb_type=pkt.get("curb_type", "") or "",
-                    arrived=time.monotonic(),
-                    latency=time.time() - float(pkt["t"]),
-                )
+                _state.update(**values)
             if not was_linked:
                 was_linked = True
                 _emit("Jetson 링크 연결됨", "INFO")

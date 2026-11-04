@@ -197,6 +197,14 @@ def gps_snapshot() -> GpsFix:
         return GpsFix(**vars(_gps))
 
 
+def preview_points(distance):
+    """전방 물체 표면을 모사한 표시용 점군. 실측으로 취급하지 않는다."""
+    if distance is None:
+        return []
+    return [[round(distance + 0.12 * abs(i / 15), 3),
+             round(distance * 0.7 * i / 15, 3)] for i in range(-15, 16)]
+
+
 def obstacle_snapshot() -> ObstacleReport:
     with _lock:
         return ObstacleReport(**vars(_obs))
@@ -244,6 +252,9 @@ def _loop():
                 t_capture=now,
                 left_m=obs_m,
                 right_m=None if obs_m is None else obs_m + 0.35,
+                left_points_xy=preview_points(obs_m),
+                right_points_xy=preview_points(None if obs_m is None else obs_m + 0.35),
+                preview_simulated=True,
                 curb_m=curb_m, curb_type=curb_type,
                 left_ok=True, right_ok=True, link_ok=True, latency_s=0.01)
 

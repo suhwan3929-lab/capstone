@@ -4,13 +4,13 @@ Jetson: ROS 2 LiDAR 브리지 노드
 
 역할
     Cygbot 공식 ROS 2 드라이버가 발행하는 토픽을 구독해서
-    관심영역(ROI) 안의 최근접 거리만 뽑아 Pi로 UDP 전송한다.
+    관심영역(ROI)의 대표 거리와 표시용 축약 윤곽을 Pi로 UDP 전송한다.
 
 왜 이렇게 하는가
     * 프레임 파싱은 **벤더 드라이버에게 맡긴다.** 직접 파싱하면
       payload 오프셋·비트폭을 추측하게 되고, 틀려도 '그럴듯한 숫자'가 나와
       틀린 줄 모른다. (코드_리뷰.md §1.4)
-    * Pi로 넘기는 데이터는 float 2개뿐이므로 DDS를 Pi까지 끌고 갈 이유가 없다.
+    * 거리 요약과 표시용 축약 점군만 넘긴다. 안전 판정에는 점군을 사용하지 않는다.
     * 이 노드가 죽어도 Pi의 전도 감지는 계속 동작한다.
 
 실행
@@ -24,6 +24,7 @@ Jetson: ROS 2 LiDAR 브리지 노드
 import json
 import socket
 import time
+import uuid
 
 import numpy as np
 import rclpy
@@ -34,6 +35,20 @@ from sensor_msgs.msg import LaserScan, PointCloud2
 from sensor_msgs_py import point_cloud2
 
 SCHEMA_VERSION = 1
+PREVIEW_BINS = 32
+
+
+def preview_xy(x, y, half_fov):
+    """각도 구간별 가장 가까운 점. 전체 점군 대신 최대 32개만 전송."""
+    if not x.size:
+        return []
+    angle = np.arctan2(y, x)
+    bins = np.clip(((angle + half_fov) / max(2 * half_fov, 1e-6)
+                    * PREVIEW_BINS).astype(int), 0, PREVIEW_BINS - 1)
+    order = np.lexsort((np.hypot(x, y), bins))
+    _, first = np.unique(bins[order], return_index=True)
+    return [[round(float(x[i]), 3), round(float(y[i]), 3)]
+            for i in order[first]]
 
 #: 점군은 최신 프레임만 의미가 있다 → BEST_EFFORT / depth 1
 SENSOR_QOS = QoSProfile(
@@ -81,7 +96,9 @@ class LidarBridge(Node):
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.seq = 0
+        self.session = uuid.uuid4().hex
         self.side = {"left": (None, 0.0), "right": (None, 0.0)}
+        self.preview = {"left": None, "right": None}
         self.curb = {"left": (None, "", 0.0), "right": (None, "", 0.0)}
 
         msg_cls = PointCloud2 if g("msg_type") == "PointCloud2" else LaserScan
@@ -99,17 +116,22 @@ class LidarBridge(Node):
     def _on_scan(self, side, msg: LaserScan):
         r = np.asarray(msg.ranges, dtype=np.float32)
         if r.size == 0:
+            self._store(side, r, [])
             return
         ang = msg.angle_min + np.arange(r.size, dtype=np.float32) * msg.angle_increment
         half = np.deg2rad(self.roi_fov / 2.0)
         keep = (np.abs(ang) <= half) & np.isfinite(r) & \
                (r >= self.d_min) & (r <= self.d_max)
-        self._store(side, r[keep])
+        valid, angles = r[keep], ang[keep]
+        self._store(side, valid, preview_xy(valid * np.cos(angles),
+                                           valid * np.sin(angles), half))
 
     def _on_cloud(self, side, msg: PointCloud2):
         pts = point_cloud2.read_points_numpy(
             msg, field_names=("x", "y", "z"), skip_nans=True)
         if pts.size == 0:
+            self._store(side, np.empty(0), [])
+            self._detect_curb(side, np.empty(0), np.empty(0))
             return
         x, y, z = pts[:, 0], pts[:, 1], pts[:, 2]
         d = np.hypot(x, y)                       # 수평 거리
@@ -119,14 +141,15 @@ class LidarBridge(Node):
 
         # 장애물: 지면보다 위에 있는 것들
         keep = in_fov & (z >= self.z_min) & (z <= self.z_max)
-        self._store(side, d[keep])
+        self._store(side, d[keep], preview_xy(x[keep], y[keep], half))
 
         # 단차: 지면 자체를 본다
         self._detect_curb(side, d[in_fov], z[in_fov])
 
-    def _store(self, side, valid):
+    def _store(self, side, valid, points):
         dist = float(np.percentile(valid, self.pct)) if valid.size else None
         self.side[side] = (dist, time.time())
+        self.preview[side] = points
 
     # ────────────────────────────────────── 단차(턱) 감지
     def _detect_curb(self, side, d, z):
@@ -187,7 +210,8 @@ class LidarBridge(Node):
         for name in ("left", "right"):
             dist, t = self.side[name]
             fresh = bool(t) and (now - t) <= self.stale
-            body[name] = {"d": dist if fresh else None, "ok": fresh}
+            body[name] = {"d": dist if fresh else None, "ok": fresh,
+                          "points_xy": self.preview[name] if fresh else None}
 
         # 좌우 중 더 가까운 단차를 보고한다
         curb_m, curb_type = None, ""
@@ -198,10 +222,10 @@ class LidarBridge(Node):
             if curb_m is None or cm < curb_m:
                 curb_m, curb_type = cm, ct
 
-        pkt = {"v": SCHEMA_VERSION, "seq": self.seq, "t": now,
+        pkt = {"v": SCHEMA_VERSION, "seq": self.seq, "session": self.session, "t": now,
                "curb_m": curb_m, "curb_type": curb_type, **body}
         try:
-            self.sock.sendto(json.dumps(pkt).encode("utf-8"), self.addr)
+            self.sock.sendto(json.dumps(pkt, separators=(",", ":")).encode("utf-8"), self.addr)
         except OSError:
             pass          # 네트워크 일시 장애로 노드가 죽지 않는다
 

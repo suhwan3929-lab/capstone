@@ -256,6 +256,7 @@ def main():
             if pub and tick % publish_every == 0:
                 b = battery.snapshot()
                 nt = ntrip_client.stats()
+                delivery = notifier.delivery_status()
                 pub.publish(SystemStatus(
                     tipover_state=state, ask_deadline=deadline, alert_sent=sent,
                     imu=imu, gps=gps, obstacle=obs,
@@ -266,7 +267,9 @@ def main():
                         ntrip_healthy=nt["healthy"], ntrip_bytes=nt["bytes"],
                         alerts_pending=notifier.pending(),
                         alert_backend=alerter.backend_name),
-                    notice=_notice[0]))
+                    notice=_notice[0],
+                    notification_id=delivery["id"],
+                    notification_state=delivery["state"]))
                 _notice[0] = None
 
             next_t += period

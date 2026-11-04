@@ -1,6 +1,7 @@
 """실제 네트워크/하드웨어 없이 고장 경보와 Discord 전송 경로를 검증한다."""
 import importlib
 import importlib.util
+import json
 import pathlib
 import sys
 import tempfile
@@ -149,7 +150,86 @@ def test_transport_error_log_does_not_expose_credentials():
         assert "secret webhook" not in " ".join(logs)
 
 
+def test_confirmed_delivery_status_tracks_queue_http_and_server_acceptance():
+    with transport() as (n, http):
+        n.send_confirmed(ImuSample(), GpsFix(), None, 0.0)
+        item = n._q.get_nowait()
+        assert n.delivery_status() == {"id": item["id"], "state": "queued"}
+        response = http.post.return_value
+
+        def post(*args, **kwargs):
+            assert n.delivery_status()["state"] == "sending"
+            return response
+
+        http.post.side_effect = post
+        n._deliver(item)
+        assert n.delivery_status() == {"id": item["id"], "state": "accepted"}
+        http.post.side_effect = None
+        n.send_cancelled("test")
+        n._deliver(n._q.get_nowait())
+        assert n.delivery_status()["id"] == item["id"]
+
+
+def test_failed_or_unconfigured_delivery_does_not_become_success_when_queue_empties():
+    for configured in (False, True):
+        with transport() as (n, http):
+            http.post.return_value.status_code = 401
+            n.send_confirmed(ImuSample(), GpsFix(), None, 0.0)
+            item = n._q.get_nowait()
+            with patch.object(n, "is_configured", return_value=configured):
+                n._deliver(item)
+            assert n.pending() == 0
+            assert n.delivery_status()["state"] == ("failed" if configured else "unconfigured")
+            assert item["id"] in pathlib.Path(config.NOTIFY_SPOOL).read_text(encoding="utf-8")
+
+
+def test_older_incident_result_cannot_overwrite_new_incident_delivery_status():
+    with transport() as (n, http):
+        n.send_confirmed(ImuSample(), GpsFix(), None, 0.0)
+        old = n._q.get_nowait()
+        n.send_confirmed(ImuSample(), GpsFix(), None, 0.0)
+        latest = n._q.get_nowait()
+        assert old["id"] != latest["id"]
+        n._deliver(old)
+        assert n.delivery_status() == {"id": latest["id"], "state": "queued"}
+
+
+def test_restored_spool_is_queued_and_map_failure_cannot_undo_text_acceptance():
+    with transport() as (n, http):
+        n.send_confirmed(ImuSample(), GpsFix(), None, 0.0)
+        item = n._q.get_nowait()
+        n._delivery.update(id="", state="")
+        n._restore_spool()
+        assert n.delivery_status() == {"id": item["id"], "state": "queued"}
+        item = n._q.get_nowait()
+        item["lat"], item["lon"] = 37.0, 127.0
+        with patch.object(n, "_fetch_static_map", side_effect=RuntimeError("mock map failure")):
+            try:
+                n._deliver(item)
+            except RuntimeError:
+                n._track_delivery(item, "failed")  # worker exception path
+        assert n.delivery_status()["state"] == "accepted"
+
+
 def test_redirect_is_not_delivery_success():
     with transport() as (n, http), patch.object(n.time, "sleep"):
         http.post.return_value.status_code = 302
         assert not n._post_with_retry({"content": "test"})
+
+
+def test_map_attachment_keeps_bot_and_webhook_auth_and_retries():
+    for backend in ("bot", "webhook"):
+        with transport(backend) as (n, http), patch.object(n.time, "sleep"):
+            http.post.side_effect = [SimpleNamespace(status_code=500), SimpleNamespace(status_code=200)]
+            payload = {"content": "test", "embeds": [{"image": {"url": "attachment://map.png"}}]}
+            assert n._post_with_retry(payload, image_bytes=b"test-image")
+            assert http.post.call_count == 2
+            for call in http.post.call_args_list:
+                assert "json" not in call.kwargs
+                assert call.kwargs["files"]["files[0]"] == ("map.png", b"test-image", "image/png")
+                assert json.loads(call.kwargs["files"]["payload_json"][1]) == payload
+                assert call.kwargs["allow_redirects"] is False
+                if backend == "bot":
+                    assert call.kwargs["headers"]["Authorization"] == "Bot unit-test-token"
+                else:
+                    assert call.kwargs["params"] == {"wait": "true"}

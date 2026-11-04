@@ -8,6 +8,7 @@
 pyserial>=3.5
 requests>=2.31
 numpy>=1.24
+pillow>=9.2            # 고밀도 3D 점군 이미지 렌더링
 
 # ── 선택 (없어도 동작하며, 해당 기능만 비활성화된다) ──
 tkintermapview>=1.29   # 대시보드 지도

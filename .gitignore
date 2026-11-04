@@ -5,6 +5,9 @@ capstone_code/.python/
 # Python bytecode and test/runtime output
 __pycache__/
 *.py[cod]
+build/
+dist/
+*.egg-info/
 capstone_code/logs/
 
 # Machine-specific configuration and secrets
