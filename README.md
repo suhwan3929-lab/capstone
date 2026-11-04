@@ -10,7 +10,7 @@ Jetson은 ROS 2 LiDAR 처리, Raspberry Pi는 Python 안전 감시와 1024×600 
 - Jetson→Pi 표시 전용 UDP 9103은 프레임당 최대 9,600 유효점, 센서별 최대 10Hz.
   0.05~2.0m 유효점만 보내며 누락·손상 프레임은 표시하지 않는다. 기존 안전 거리 UDP 9100은 유지한다.
 - **Pi 수신기를 먼저 업데이트하고 Jetson 패키지를 재빌드·재시작한다.**
-  기존 고정 IP와 `config_local.py`는 유지한다. pull만으로 실제 실행 폴더/ROS 설치본이 갱신되는지 확인해야 한다.
+  기존 고정 IP를 유지하며 `config_local.py`에 `UDP_PREVIEW_BIND`를 Pi의 현재 유선 IPv4로 한 번 지정한다. pull만으로 실제 실행 폴더/ROS 설치본이 갱신되는지 확인해야 한다.
 
 [장치별 적용·예상 결과·롤백](capstone_code/docs/deploy_gui_channels.md)을 따른다.
 사용자는 USB 채널 0/1 분리 후 간섭 감소를 확인했다고 보고했다.

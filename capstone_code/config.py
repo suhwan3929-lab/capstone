@@ -302,6 +302,8 @@ BATTERY_POLL_SEC = 10.0
 #   safety_monitor  → ui : 시스템 상태
 #   ui → safety_monitor  : 사용자 응답(취소/확인)
 # ══════════════════════════════════════════════════════════
+UDP_PREVIEW_BIND = "127.0.0.1"  # Set the Pi wired IPv4 in config_local.py for Jetson input
+UDP_PREVIEW_PORT = 9103    # Display-only 3D packets
 UDP_LIDAR_PORT = 9100      # Pi가 수신
 UDP_STATUS_PORT = 9101     # ui가 수신
 UDP_COMMAND_PORT = 9102    # safety_monitor가 수신

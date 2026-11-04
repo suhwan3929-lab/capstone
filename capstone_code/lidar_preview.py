@@ -1,6 +1,7 @@
 """GUI-only UDP receiver. No safety status, commands, or sensor decisions pass here."""
 from collections import deque
 from dataclasses import dataclass
+import ipaddress
 import socket
 import threading
 import time
@@ -19,8 +20,9 @@ class PreviewSnapshot:
 
 
 class PreviewReceiver:
-    def __init__(self, port=PORT, clock=time.monotonic):
+    def __init__(self, port=PORT, clock=time.monotonic, bind_host="127.0.0.1"):
         self.port, self.clock = port, clock
+        self.bind_host = bind_host
         self._lock = threading.Lock()
         self._latest = {}
         self._retired = {side: deque(maxlen=64) for side in ("left", "right")}
@@ -40,7 +42,10 @@ class PreviewReceiver:
         except OSError:
             pass  # The OS default remains usable when the buffer hint is denied.
         try:
-            sock.bind(("0.0.0.0", int(self.port)))
+            address = ipaddress.IPv4Address(self.bind_host)
+            if address.is_unspecified or address.is_multicast or int(address) == 0xffffffff:
+                raise ValueError("3D preview requires one local IPv4 address, not a wildcard")
+            sock.bind((str(address), int(self.port)))
             sock.settimeout(0.1)
         except (OSError, ValueError, TypeError, OverflowError) as exc:
             sock.close()

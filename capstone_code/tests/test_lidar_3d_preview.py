@@ -141,6 +141,23 @@ def test_bad_preview_port_does_not_crash_dashboard_receiver():
         assert receiver.snapshot("left").status == "unavailable"
 
 
+def test_preview_binds_only_explicit_ipv4_and_rejects_wildcard_before_binding():
+    sock = Mock()
+    sock.getsockname.return_value = ("192.168.10.2", 9103)
+    with patch("lidar_preview.socket.socket", return_value=sock), patch("lidar_preview.threading.Thread"):
+        receiver = PreviewReceiver(bind_host="192.168.10.2")
+        assert receiver.start()
+        sock.bind.assert_called_once_with(("192.168.10.2", 9103))
+    for address in ("0.0.0.0", "", "::", "255.255.255.255", "224.0.0.1", "not-an-ip"):
+        sock = Mock()
+        with patch("lidar_preview.socket.socket", return_value=sock):
+            receiver = PreviewReceiver(bind_host=address)
+            assert not receiver.start()
+            assert receiver.snapshot("left").status == "unavailable"
+            sock.bind.assert_not_called()
+            sock.close.assert_called_once()
+
+
 def test_corrupt_preview_does_not_refresh_stale_time():
     now = [5.0]
     receiver = PreviewReceiver(clock=lambda: now[0])

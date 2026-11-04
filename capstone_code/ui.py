@@ -476,7 +476,8 @@ class Dashboard:
         self.sub.start()
         self.cmd = command_sender if command_sender is not None else CommandSender()
         self.preview_sub = preview_receiver if preview_receiver is not None else PreviewReceiver(
-            port=os.environ.get("WALKER_PREVIEW_PORT", getattr(config, "UDP_PREVIEW_PORT", 9103)))
+            port=os.environ.get("WALKER_PREVIEW_PORT", getattr(config, "UDP_PREVIEW_PORT", 9103)),
+            bind_host=os.environ.get("WALKER_PREVIEW_BIND", getattr(config, "UDP_PREVIEW_BIND", "127.0.0.1")))
         self.preview_sub.start()
 
         self._popup = None

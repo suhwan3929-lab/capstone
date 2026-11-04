@@ -39,3 +39,7 @@ LIDAR_SOURCE = "serial"
 BATTERY_BACKEND = "null"
 BATTERY_SHUTDOWN_ENABLED = False
 # Pi/Jetson 배터리 잔량은 각 배터리 표시로 확인. 자세한 전원 시험은 ../최종 테스트.md.
+
+# 3D UDP 수신 주소. 실기에서는 Pi의 현재 유선 IPv4로 지정한다.
+# 기본은 PC 로컬 시험용 127.0.0.1이며 0.0.0.0은 허용하지 않는다.
+# UDP_PREVIEW_BIND = "192.168.10.2"  # 예시 주소, 실제 Pi IP로 바꿀 것
