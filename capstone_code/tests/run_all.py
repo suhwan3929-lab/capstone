@@ -23,7 +23,8 @@ import console  # noqa: E402
 
 console.setup()
 
-MODULES = ["test_tipover_fsm", "test_components", "test_safety_notifications"]
+MODULES = ["test_tipover_fsm", "test_components", "test_safety_notifications",
+           "test_ui_recovery", "test_ui_status", "test_lidar_preview", "test_lidar_3d_preview", "test_usb_lidar_3d", "test_autostart"]
 
 
 def run():

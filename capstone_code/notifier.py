@@ -19,6 +19,7 @@ import pathlib
 import queue
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 
 import config
@@ -37,6 +38,8 @@ _q: "queue.Queue[dict]" = queue.Queue(maxsize=64)
 _log = None
 _started = False
 _spool_lock = threading.Lock()
+_delivery_lock = threading.Lock()
+_delivery = {"id": "", "state": ""}
 
 KIND_PRELIM = "preliminary"
 KIND_CONFIRM = "confirmed"
@@ -101,6 +104,23 @@ def pending() -> int:
     return _q.qsize()
 
 
+def delivery_status() -> dict:
+    """최근 확정 알림의 상태. 서버 접수와 보호자 열람은 구분한다."""
+    with _delivery_lock:
+        return dict(_delivery)
+
+
+def _track_delivery(item, state, *, new=False):
+    if item.get("kind") != KIND_CONFIRM or not item.get("id"):
+        return
+    with _delivery_lock:
+        # 이전 사고의 늦은 HTTP 응답이 새 사고의 상태를 덮지 않게 한다.
+        if new or item["id"] == _delivery["id"]:
+            if not new and state == "failed" and _delivery["state"] == "accepted":
+                return  # 후속 지도 첨부 실패로 텍스트 접수 결과를 뒤집지 않는다.
+            _delivery.update(id=item["id"], state=state)
+
+
 # ══════════════════════════════════════════════════════════
 # 내부
 # ══════════════════════════════════════════════════════════
@@ -123,15 +143,17 @@ def _enqueue(kind, imu, gps, age, peak_g=None, reason=None):
     }
     # 사고 확정 알림은 프로세스가 죽어도 살아남아야 한다 → 먼저 디스크에 남긴다
     if kind in DURABLE_KINDS:
-        item["id"] = f"{time.time():.3f}-{kind}"
+        item["id"] = uuid.uuid4().hex
         _spool_add(item)
+        _track_delivery(item, "queued", new=True)
 
     try:
         _q.put_nowait(item)
     except queue.Full:
         _emit("전송 큐 포화 — 가장 오래된 항목 폐기", "ERROR")
         try:
-            _q.get_nowait()
+            dropped = _q.get_nowait()
+            _track_delivery(dropped, "failed")
             _q.put_nowait(item)
         except queue.Empty:
             pass
@@ -143,6 +165,7 @@ def _worker():
         try:
             _deliver(item)
         except Exception as e:
+            _track_delivery(item, "failed")
             _emit(f"전송 처리 중 예외: {type(e).__name__}", "ERROR")
         finally:
             _q.task_done()
@@ -150,15 +173,19 @@ def _worker():
 
 def _deliver(item):
     if not is_configured():
+        _track_delivery(item, "unconfigured")
         return
+    _track_delivery(item, "sending")
     # 1단계: 텍스트를 먼저 보낸다 (지도를 기다리지 않는다) [H2]
     ok = _post_with_retry(_build_payload(item))
     if not ok:
+        _track_delivery(item, "failed")
         _emit("재시도 소진 — 전송 실패. "
               "다음 기동 시 재시도합니다." if item.get("id") else
               "재시도 소진 — 전송 실패", "ERROR")
         return
-    _emit(f"보호자 알림 전송 성공 ({item['kind']})", "INFO")
+    _track_delivery(item, "accepted")
+    _emit(f"Discord 서버 알림 접수 확인 ({item['kind']})", "INFO")
     if item.get("id"):
         _spool_remove(item["id"])
 
@@ -234,6 +261,7 @@ def _restore_spool():
             it["late"] = True           # 지연 발송임을 메시지에 표시
             try:
                 _q.put_nowait(it)
+                _track_delivery(it, "queued", new=True)
             except queue.Full:
                 break
     except Exception as e:
@@ -253,11 +281,17 @@ def _discord_post(**kwargs):
     return requests.post(url, **auth, allow_redirects=False, **kwargs)
 
 
-def _post_with_retry(payload) -> bool:
+def _post_with_retry(payload, *, image_bytes=None) -> bool:
     delay = 1.0
     for attempt in range(config.WEBHOOK_MAX_RETRY):
         try:
-            r = _discord_post(json=payload, timeout=config.WEBHOOK_TIMEOUT)
+            if image_bytes is None:
+                r = _discord_post(json=payload, timeout=config.WEBHOOK_TIMEOUT)
+            else:
+                r = _discord_post(files={
+                    "files[0]": ("map.png", image_bytes, "image/png"),
+                    "payload_json": (None, json.dumps(payload), "application/json"),
+                }, timeout=config.WEBHOOK_TIMEOUT * 2)
             if r.status_code == 429:
                 retry_after = r.headers.get("Retry-After", 5)
                 try:

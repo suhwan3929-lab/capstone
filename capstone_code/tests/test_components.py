@@ -73,6 +73,18 @@ def test_command_link_dedupes_burst():
     assert got == [CMD_USER_NO], got
 
 
+def test_command_sender_reports_only_local_socket_send_result():
+    from unittest.mock import Mock, patch
+    from status_link import CommandSender
+    sender = CommandSender()
+    sender._sock.close()
+    sender._sock = Mock()
+    with patch("status_link.time.sleep"):
+        assert sender.send("sos") is True
+        sender._sock.sendto.side_effect = OSError("mock socket failure")
+        assert sender.send("sos") is False
+
+
 def test_lidar_udp_rejects_stale_and_accepts_restart():
     """
     seq 역전은 버리되, Jetson 재시작(seq 리셋)은 받아들여야 한다.

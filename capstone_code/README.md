@@ -1,6 +1,8 @@
 # 고령자 보행기 안전 보조 시스템 — 소프트웨어
 
-> 최신 정리: [2026-10-18 진행 현황](docs/progress_2026-10-18.md). 준비한 기능·과거 결과·실기 미확인을 구분한다.
+> 최신 GUI·채널·9,600점 적용: [장치별 업데이트](docs/deploy_gui_channels.md).
+
+> 이전 정리: [2026-10-18 진행 현황](docs/progress_2026-10-18.md). 준비한 기능·과거 결과·실기 미확인을 구분한다.
 
 <!-- project-status:2026-10-12:start -->
 > 갱신: 2026-10-12 · [진행 현황·확인 범위](docs/progress_2026-10-12.md)
@@ -14,9 +16,9 @@
                     ┌──────────────── Jetson Orin Nano ────────────────┐
                     │  cygbot_ros2 드라이버 ×2  (벤더 제공)             │
                     │        ↓ /cygbot_*/scan                          │
-                    │  lidar_bridge_node  ROI 필터 · 퍼센타일 · 단차감지 │
+                    │  lidar_bridge_node  2D ROI 필터 · 대표 거리 │
                     └────────────────────┬─────────────────────────────┘
-                                         │ UDP 9100 (거리 + 단차, 20 Hz)
+                                         │ UDP 9100 (2D 거리, 20 Hz)
                     ┌────────────────────▼──── Raspberry Pi 5 ─────────┐
                     │  safety_monitor.py     ★ 안전 필수 · 단독 생존      │
                     │   IMU · GPS · 전도판정 · 부저/진동 · 물리버튼     │
@@ -28,6 +30,9 @@
                     │  ※ 죽어도 안전 기능은 계속 동작한다               │
                     └──────────────────────────────────────────────────┘
 ```
+
+3D는 `/cygbot_*/scan_3D` → 별도 `lidar_preview_node` → UDP 9103 → GUI로 전달한다.
+센서별 최대 9,600 유효점이며 안전 감시 입력과 분리한다. 현재 2D 거리 경로는 단차를 자동 판정하지 않는다.
 
 ---
 
@@ -43,7 +48,7 @@ sudo apt update
 sudo apt install -y python3-pip python3-venv python3-tk
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install pyserial requests numpy tkintermapview
+python -m pip install pyserial requests numpy pillow tkintermapview
 python run_dev.py --sim --scenario normal_walk --no-alert
 ```
 
@@ -83,7 +88,7 @@ SSH 설치·APT 잠금은 [Ubuntu 원격접속](docs/remote_access.md),
 python tests/run_all.py
 ```
 
-현재 등록 테스트 함수 정적 집계는 43개다. 실행 결과의 통과/실패 수를 별도로 기록한다. `tipover_monitor.py`를 건드렸다면 특히 필수다.
+실행 결과의 통과/실패 수를기록한다. `tipover_monitor.py`를 건드렸다면 특히 필수다.
 Discord 봇 연결과 실기 검증은 [최종 테스트.md](../최종%20테스트.md)의 P8을 따른다.
 
 ---

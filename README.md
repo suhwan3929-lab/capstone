@@ -1,22 +1,31 @@
 # 고령자 보행기 안전 보조 시스템
 
-<!-- project-status:2026-10-12:start -->
-> 갱신: 2026-10-18 · [진행 정리·확인 범위](capstone_code/docs/progress_2026-10-18.md)
-> 실행·Ubuntu 원격접속·Git 배포의 최신 진행 기록을 연결했다. 기존 날짜별 검토·시험 결과와 아직 미확인인 실기 항목을 구분한다.
-<!-- project-status:2026-10-12:end -->
+Jetson은 ROS 2 LiDAR 처리, Raspberry Pi는 Python 안전 감시와 1024×600 가로 대시보드를 담당한다.
+게시 기준 브랜치는 **main**이다. GitHub 코드 반영과 실제 장치 적용은 각각 확인한다.
 
-Jetson은 ROS 2 LiDAR 처리, Raspberry Pi는 Python 안전 감시와 대시보드를 담당한다.
+## 2026-11-04 GUI·LiDAR 변경
 
-- [현재 진행 정리와 미확인 항목](capstone_code/docs/progress_2026-10-18.md)
+- 정면 3D 기본 화면, 2px 점, 고정 투영, 확대 눈금 1/5/10cm, 큰 시계.
+- Jetson 왼쪽 채널 0·오른쪽 채널 1. Windows USB 시험도 기본 0/1.
+- Jetson→Pi 표시 전용 UDP 9103은 프레임당 최대 9,600 유효점, 센서별 최대 10Hz.
+  0.05~2.0m 유효점만 보내며 누락·손상 프레임은 표시하지 않는다. 기존 안전 거리 UDP 9100은 유지한다.
+- **Pi 수신기를 먼저 업데이트하고 Jetson 패키지를 재빌드·재시작한다.**
+  기존 고정 IP와 `config_local.py`는 유지한다. pull만으로 실제 실행 폴더/ROS 설치본이 갱신되는지 확인해야 한다.
+
+[장치별 적용·예상 결과·롤백](capstone_code/docs/deploy_gui_channels.md)을 따른다.
+사용자는 USB 채널 0/1 분리 후 간섭 감소를 확인했다고 보고했다.
+이 게시본의 PC 테스트는 실제 Pi·Jetson 배포나 센서 정확도 검증을 뜻하지 않는다.
+
+## 실행과 기록
+
 - [소프트웨어 구조·기본 실행](capstone_code/README.md)
+- [3D 점군·전송 형식](capstone_code/docs/lidar_3d_preview.md)
+- [Windows 두 USB 센서 시험](capstone_code/docs/usb_3d_pc_test.md)
+- [GUI 상태·SOS 표시](capstone_code/docs/gui_status_update.md)
+- [사고 후 감시 재개](capstone_code/docs/incident_recovery.md)
 - [Ubuntu SSH·APT 잠금 해결](capstone_code/docs/remote_access.md)
 - [Git 업데이트와 코드 버전 확인](capstone_code/docs/git_update.md)
+- [이전 진행 기록: 2026-10-18](capstone_code/docs/progress_2026-10-18.md)
 - [단계별 최종 시험](최종%20테스트.md)
 
-현재 배포 브랜치와 작업 원본의 후속 기능은 같지 않다. GitHub 최신 여부와 실제 장치 적용 여부를 각각 확인한다.
-
-이번 진행 정리에는 Discord 시험·자동 실행·유선 LAN 준비를 포함한다. 상위 작업 원본에만 있는 후속 코드와 장치 적용은 보고서에서 구분한다.
-
-**현재 게시 기준은 main이다.** 2026-10-18 사용자 요청에 따라 기존 작업 브랜치의 변경을 main으로 반영한다. 과거 브랜치 기록과 소스/장치 적용 범위는 [Git 배포 안내](capstone_code/docs/git_update.md)를 따른다.
-
-main은 PR과 쓰기 권한 리뷰어 1명의 승인이 필요하다. [반영 대기 PR #1](https://github.com/suhwan3929-lab/capstone/pull/1)은 테스트 43개를 통과했으며 현재 승인 대기다. 직접 push와 병합 시도는 보호 규칙으로 거부돼 아직 원격 main에는 반영되지 않았다.
+개인 설정·로그·원본 센서 캡처·Python 환경은 게시하지 않는다. 무선 IMU 등 작업 원본의 별도 후속 변경은 이번 범위에 포함하지 않았다.

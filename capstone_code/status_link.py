@@ -36,7 +36,7 @@ class StatusPublisher:
         d = status.to_dict()
         d["v"] = config.SCHEMA_VERSION
         try:
-            self._sock.sendto(json.dumps(d).encode("utf-8"), self.addr)
+            self._sock.sendto(json.dumps(d, separators=(",", ":")).encode("utf-8"), self.addr)
         except OSError:
             pass          # UI가 없어도 safety_monitor는 계속 동작해야 한다
 
@@ -106,13 +106,17 @@ class CommandSender:
 
     def send(self, cmd: str):
         payload = json.dumps({"v": config.SCHEMA_VERSION, "cmd": cmd}).encode()
+        sent = False
         # 사용자 취소는 놓치면 안 되는 명령이므로 3번 보낸다 (UDP 손실 대비)
         for _ in range(3):
             try:
                 self._sock.sendto(payload, self.addr)
+                sent = True
             except OSError:
                 pass
             time.sleep(0.02)
+        # 송신 성공은 모니터의 접수나 외부 알림 성공을 뜻하지 않는다.
+        return sent
 
 
 class CommandListener:
