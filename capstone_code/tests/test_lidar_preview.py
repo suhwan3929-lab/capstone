@@ -30,6 +30,7 @@ def bridge():
     node.preview = {"left": None, "right": None}
     node.curb = {"left": (None, "", 0.0), "right": (None, "", 0.0)}
     node.sock, node.addr, node.seq = Mock(), ("127.0.0.1", 9100), 0
+    node.session = "bridge-a"
     return node, ns["preview_xy"]
 
 

@@ -6,6 +6,7 @@ import ui
 from buttons import CMD_SOS
 from schema import GpsFix, ImuSample, ObstacleReport, SystemStatus
 from states import CONN_OK, TIPOVER_CONFIRMED, TIPOVER_NORMAL, TIPOVER_REPORTED
+from lidar_preview import PreviewSnapshot
 
 
 def status():
@@ -56,6 +57,50 @@ def test_header_preserves_danger_and_reports_other_failed_sensor():
         d._refresh()
     assert "위험" in d.overall.config.call_args.kwargs["text"]
     assert "LiDAR" in d.overall.config.call_args.kwargs["text"]
+
+
+def test_threeD_loss_is_explicit_while_distance_monitoring_stays_healthy():
+    d = dashboard()
+    d.preview_sub = Mock()
+    d.preview_sub.snapshot.side_effect = lambda side: PreviewSnapshot(status="live" if side == "left" else "stale")
+    with patch.multiple(config, SIM_MODE=False, LIDAR_SOURCE="udp"):
+        d._refresh()
+    text = d.overall.config.call_args.kwargs["text"]
+    assert "감시 정상" in text and "3D 오른쪽 중단" in text
+    assert d.overall.config.call_args.kwargs["fg"] == ui.C_YELLOW
+    d.lidar_r.update_card.assert_called_once_with(3.0, True, True, None, False)
+
+
+def test_threeD_health_does_not_mask_distance_danger_or_sensor_failure():
+    st = status()
+    st.obstacle.left_m = .1
+    d = dashboard(st)
+    d.preview_sub = Mock()
+    d.preview_sub.snapshot.return_value = PreviewSnapshot(status="unavailable")
+    with patch.multiple(config, SIM_MODE=False, LIDAR_SOURCE="udp"):
+        d._refresh()
+    assert "위험" in d.overall.config.call_args.kwargs["text"]
+    assert "3D" in d.overall.config.call_args.kwargs["text"]
+    assert d.overall.config.call_args.kwargs["fg"] == ui.C_RED
+    st.obstacle.left_m, st.obstacle.left_ok = None, False
+    d.preview_sub.snapshot.return_value = PreviewSnapshot(status="live")
+    with patch.multiple(config, SIM_MODE=False, LIDAR_SOURCE="udp"):
+        d._refresh()
+    assert "감시 일부 불가" in d.overall.config.call_args.kwargs["text"]
+
+
+def test_threeD_badge_and_distance_badge_are_updated_independently():
+    card = ui.LidarCard.__new__(ui.LidarCard)
+    for name in ("preview_3d", "preview_status", "preview", "badge", "dist", "config"):
+        setattr(card, name, Mock())
+    card.update_card(3, True, True)
+    assert "거리" in card.badge.config.call_args.kwargs["text"]
+    distance_calls = list(card.badge.config.call_args_list)
+    card.update_3d(PreviewSnapshot(status="stale"))
+    assert card.preview_status.config.call_args.kwargs["text"] == "3D 수신 중단"
+    assert card.badge.config.call_args_list == distance_calls
+    card.update_3d(PreviewSnapshot(status="empty"))
+    assert card.preview_status.config.call_args.kwargs["text"] == "3D 유효점 없음"
 
 
 def test_invalid_lidar_distance_cannot_trigger_display_danger():

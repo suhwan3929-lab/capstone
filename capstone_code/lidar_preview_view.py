@@ -135,7 +135,7 @@ class Lidar3DPreview(tk.Canvas):
         self.create_text(16, h - 25, text=f"한 칸 {grid_step * 100:g} cm", anchor=tk.W,
                          fill="#bacad2", font=("Segoe UI", 8))
         messages = {"missing": "3D 데이터 없음", "stale": "3D 수신 중단",
-                    "empty": "유효 측정점 없음", "unavailable": "3D 수신 포트 사용 불가"}
+                    "empty": "유효 측정점 없음", "unavailable": "3D 연결 확인 필요"}
         if snapshot.status != "live":
             self.create_text(w / 2, 11, text=f"{heading} · {name} · 표시 거리 ≤ 2 m",
                              fill="#bacad2", font=("Segoe UI", 9))

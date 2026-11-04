@@ -128,7 +128,7 @@ def test_preview_port_failure_is_optional_and_closes_socket():
     sock.bind.side_effect = OSError("port occupied")
     with patch("lidar_preview.socket.socket", return_value=sock):
         receiver = PreviewReceiver()
-        assert not receiver.start()
+        assert not receiver.start(retry=False)
         assert receiver.snapshot("left").status == "unavailable"
         assert receiver._thread is None
         sock.close.assert_called_once()
@@ -155,7 +155,7 @@ def test_preview_binds_only_explicit_ipv4_and_rejects_wildcard_before_binding():
             assert not receiver.start()
             assert receiver.snapshot("left").status == "unavailable"
             sock.bind.assert_not_called()
-            sock.close.assert_called_once()
+            sock.close.assert_not_called()
 
 
 def test_corrupt_preview_does_not_refresh_stale_time():

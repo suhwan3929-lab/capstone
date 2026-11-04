@@ -122,6 +122,7 @@ class SystemStatus:
     # Discord 서버의 접수 결과이며 보호자 열람 확인이 아니다.
     notification_id: str = ""
     notification_state: str = ""
+    session: Optional[str] = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -130,6 +131,7 @@ class SystemStatus:
     def from_dict(d: dict) -> "SystemStatus":
         return SystemStatus(
             seq=d.get("seq", 0),
+            session=d.get("session"),
             t=d.get("t", 0.0),
             tipover_state=d.get("tipover_state", ""),
             ask_deadline=d.get("ask_deadline"),

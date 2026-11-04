@@ -67,6 +67,7 @@ git rev-parse HEAD
 fast-forward가 거절되면 이력 차이를 확인하고 중단한다. 강제 초기화하지 않는다.
 실제 배포 경로가 저장소 밖이면 같은 버전의 `capstone_code` 변경 파일을 반영하고 로컬 설정은 보존한다.
 GUI는 `ui.py`, `lidar_preview.py`, `lidar_preview_view.py`, `jetson/walker_preview/`가 함께 필요하다.
+재시작 복구에는 새 공통 모듈 `stream_order.py`가 필요하다.
 이번 게시본의 상태 표시 변경까지 적용하려면 `schema.py`, `states.py`, `status_link.py`,
 `notifier.py`, `safety_monitor.py`, `sensors/lidar_udp.py` 등도 같은 버전으로 맞춘다.
 
@@ -86,6 +87,8 @@ sudo systemctl restart walker-safety.service
 systemctl status walker-safety.service --no-pager
 ```
 
+[재시작 복구·상태 표시](recovery_and_3d_status.md)에 이번 동작을 정리했다.
+
 3D 수신 주소를 **한 번 지정**한다. `ip -4 addr`로 Pi의 현재 유선 IPv4를 확인하고
 기존 `config_local.py`에 다음 한 줄을 추가한다. 다른 설정은 유지한다.
 
@@ -96,7 +99,7 @@ UDP_PREVIEW_BIND = "192.168.10.2"  # 예시. Pi의 실제 유선 IPv4로 바꿀 
 OS 고정 IP나 LAN을 재설정하는 작업이 아니다. 기본값 `127.0.0.1`은 PC 로컬 시험용이므로
 이 한 줄을 생략하면 Jetson의 3D 데이터를 받을 수 없다. `0.0.0.0`은 거절한다.
 실행 환경변수 `WALKER_PREVIEW_BIND`가 있으면 위 설정보다 우선하므로 같은 실제 주소로 맞춘다.
-유선 IP가 바뀌면 이 앱 설정도 바꿔야 한다. 잘못된 주소/포트는 3D 표시만 비활성화한다.
+유선 IP가 바뀌면 이 앱 설정도 바꿔야 한다. 잘못된 주소/포트는 3D 표시만 비활성화한다. 유효한 주소의 연결 오류는 1초마다 자동 재시도한다.
 
 GUI를 실제 사용 중인 방식으로 한 번만 재시작한다. 바탕화면 자동 실행 방식은 창을 닫고 런처의 재시작을 기다린다.
 기존 `walker-ui.service`를 쓰는 경우에만 그 서비스를 재시작한다. 수동 실행 구성은 기존 명령으로 다시 실행한다.

@@ -101,9 +101,9 @@ def test_lidar_udp_rejects_stale_and_accepts_restart():
     time.sleep(0.3)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-    def send(seq, d):
+    def send(seq, d, session="bridge-a"):
         sock.sendto(json.dumps({
-            "v": config.SCHEMA_VERSION, "seq": seq, "t": time.time(),
+            "v": config.SCHEMA_VERSION, "seq": seq, "session": session, "t": time.time(),
             "left": {"d": d, "ok": True}, "right": {"d": d, "ok": True},
         }).encode(), ("127.0.0.1", port))
 
@@ -114,7 +114,7 @@ def test_lidar_udp_rejects_stale_and_accepts_restart():
     time.sleep(0.3)
     assert lidar_udp.snapshot().left_m == 1.5, "순서 역전 패킷이 반영되었다"
 
-    send(1, 0.7)               # Jetson 재시작(seq 리셋) → 수용되어야 한다
+    send(1, 0.7, "bridge-b")   # Jetson 재시작(seq 리셋) → 즉시 수용되어야 한다
     assert wait_for(lambda: lidar_udp.snapshot().left_m == 0.7),         "Jetson 재시작 후 패킷이 영구히 거부되었다"
 
     lidar_udp.stop()

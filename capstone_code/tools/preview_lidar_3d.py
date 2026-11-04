@@ -157,6 +157,11 @@ def main():
                     check(card.dist, name + " distance")
                 else:
                     assert not card.dist.winfo_ismapped(), name + " distance must stay hidden"
+                check(card.title_label, name + " title")
+                check(card.badge, name + " distance status")
+                check(card.preview_status, name + " 3D status")
+                for label in (card.title_label, card.badge, card.preview_status):
+                    assert label.winfo_width() >= label.winfo_reqwidth(), name + " header text clipped"
                 check(card.preview_3d, name + " 3D canvas")
                 if card.show_controls:
                     for button in card.mode_buttons.values():

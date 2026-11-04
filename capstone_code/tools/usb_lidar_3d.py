@@ -210,6 +210,8 @@ def create_dashboard(root, receiver):
 
     dashboard = UsbTestDashboard(root, status_subscriber=NoStatus(),
                                  command_sender=NoCommands(), preview_receiver=receiver)
+    for card in (dashboard.lidar_l, dashboard.lidar_r):
+        card.preview_status.pack_forget()
     dashboard.display_mode_buttons["2D"].config(state=ui.tk.DISABLED)
     controls = ui.tk.Frame(dashboard.header_controls, bg=ui.C_HEADER_BG)
     controls.pack(side=ui.tk.LEFT, padx=(0, 4))

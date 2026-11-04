@@ -21,6 +21,7 @@ Jetson은 ROS 2 LiDAR 처리, Raspberry Pi는 Python 안전 감시와 1024×600 
 - [소프트웨어 구조·기본 실행](capstone_code/README.md)
 - [3D 점군·전송 형식](capstone_code/docs/lidar_3d_preview.md)
 - [Windows 두 USB 센서 시험](capstone_code/docs/usb_3d_pc_test.md)
+- [재시작 복구·3D 수신 상태](capstone_code/docs/recovery_and_3d_status.md)
 - [GUI 상태·SOS 표시](capstone_code/docs/gui_status_update.md)
 - [사고 후 감시 재개](capstone_code/docs/incident_recovery.md)
 - [Ubuntu SSH·APT 잠금 해결](capstone_code/docs/remote_access.md)

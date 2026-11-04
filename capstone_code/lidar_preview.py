@@ -19,6 +19,9 @@ class PreviewSnapshot:
     capture_ns: int = 0
 
 
+RECONNECT_SEC = 1.0
+
+
 class PreviewReceiver:
     def __init__(self, port=PORT, clock=time.monotonic, bind_host="127.0.0.1"):
         self.port, self.clock = port, clock
@@ -32,33 +35,57 @@ class PreviewReceiver:
         self._thread = None
         self._stop = threading.Event()
         self.error = None
+        self._retry = True
 
-    def start(self):
+    def start(self, retry=True):
         if self._thread and self._thread.is_alive():
-            return True
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)
-        except OSError:
-            pass  # The OS default remains usable when the buffer hint is denied.
+            return self.error is None
         try:
             address = ipaddress.IPv4Address(self.bind_host)
             if address.is_unspecified or address.is_multicast or int(address) == 0xffffffff:
                 raise ValueError("3D preview requires one local IPv4 address, not a wildcard")
-            sock.bind((str(address), int(self.port)))
-            sock.settimeout(0.1)
-        except (OSError, ValueError, TypeError, OverflowError) as exc:
-            sock.close()
+            port = int(self.port)
+            if not 0 <= port <= 65535:
+                raise ValueError("Invalid 3D preview port")
+        except (ValueError, TypeError, OverflowError) as exc:
             self.error = str(exc)
             return False
-        self.error = None
-        self.port = sock.getsockname()[1]
-        self._socket = sock
+        self.bind_host, self.port = str(address), port
+        self._retry = retry
         self._stop.clear()
+        with self._lock:
+            self._latest.clear()
+            self._pending.clear()
+        try:
+            sock = self._open_socket()
+        except OSError as exc:
+            self.error = str(exc)
+            sock = None
+        ready = sock is not None
+        if not ready and not retry:
+            return False
+        self._socket = sock
+        if ready:
+            self.error = None
         self._thread = threading.Thread(target=self._loop, args=(sock,), daemon=True,
                                         name="Preview3D-RX")
         self._thread.start()
-        return True
+        return ready
+
+    def _open_socket(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)
+            except OSError:
+                pass
+            sock.bind((self.bind_host, self.port))
+            sock.settimeout(0.1)
+            self.port = sock.getsockname()[1]
+            return sock
+        except OSError:
+            sock.close()
+            raise
 
     def stop(self):
         self._stop.set()
@@ -66,6 +93,12 @@ class PreviewReceiver:
             self._socket.close()
         if self._thread:
             self._thread.join(timeout=0.3)
+
+    def _disconnect(self, error):
+        self.error = str(error)
+        with self._lock:
+            self._latest.clear()
+            self._pending.clear()
 
     def ingest(self, data):
         try:
@@ -162,13 +195,31 @@ class PreviewReceiver:
         return PreviewSnapshot(points, "live" if points else "empty", frame.simulated, frame.capture_ns)
 
     def _loop(self, sock):
-        while not self._stop.is_set():
-            try:
-                data, _ = sock.recvfrom(MAX_PACKET + 1)
-                self.ingest(data)
-            except socket.timeout:
-                continue
-            except OSError as exc:
-                if not self._stop.is_set():
-                    self.error = str(exc)
-                return
+        try:
+            while not self._stop.is_set():
+                if sock is None:
+                    if not self._retry or self._stop.wait(RECONNECT_SEC):
+                        return
+                    try:
+                        sock = self._open_socket()
+                        self._socket = sock
+                        self.error = None
+                    except OSError as exc:
+                        self._disconnect(exc)
+                        continue
+                try:
+                    data, _ = sock.recvfrom(MAX_PACKET + 1)
+                    self.ingest(data)
+                except socket.timeout:
+                    continue
+                except OSError as exc:
+                    if self._stop.is_set():
+                        return
+                    self._disconnect(exc)
+                    sock.close()
+                    sock = None
+                    self._socket = None
+        finally:
+            if sock is not None:
+                sock.close()
+            self._socket = None

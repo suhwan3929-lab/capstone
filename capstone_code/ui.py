@@ -221,9 +221,12 @@ class LidarCard(tk.Frame):
         self.title_label = tk.Label(header, text=title, bg=C_CARD, fg=C_WHITE,
                                     font=("Segoe UI", 13, "bold"))
         self.title_label.pack(side=tk.LEFT)
-        self.badge = tk.Label(header, text=" 연결 대기중 ", bg=C_GRAY, fg=C_WHITE,
+        self.badge = tk.Label(header, text=" 거리 대기 ", bg=C_GRAY, fg=C_WHITE,
                               font=("Segoe UI", 10, "bold"), padx=8, pady=3)
         self.badge.pack(side=tk.RIGHT)
+        self.preview_status = tk.Label(header, text="3D 수신 대기", bg=C_CARD,
+                                       fg=C_DIMWHITE, font=("Segoe UI", 9, "bold"))
+        self.preview_status.pack(side=tk.RIGHT, padx=(4, 8))
         distance_row = tk.Frame(self, bg=C_CARD)
         self.distance_row = distance_row
         if show_distance:
@@ -277,18 +280,22 @@ class LidarCard(tk.Frame):
 
     def update_3d(self, snapshot):
         self.preview_3d.update_snapshot(snapshot)
+        label = {"live": "3D 수신 중", "empty": "3D 유효점 없음", "stale": "3D 수신 중단",
+                 "missing": "3D 수신 대기", "unavailable": "3D 연결 확인"}.get(snapshot.status, "3D 확인 중")
+        color = C_GREEN if snapshot.status == "live" else C_YELLOW if snapshot.status in ("stale", "unavailable") else C_DIMWHITE
+        self.preview_status.config(text=label, fg=color)
 
     def update_card(self, d, ok, link_ok, points=None, simulated=False):
         self.preview.update_scan(points, ok, link_ok, simulated)
         if not link_ok:
-            self._flat("  링크 끊김  ", C_RED, "센서 이상")
+            self._flat(" 거리 링크 끊김 ", C_RED, "센서 이상")
             return
         if not ok:
-            self._flat("  연결 실패  ", C_RED, "연결 안됨")
+            self._flat(" 거리 센서 오류 ", C_RED, "연결 안됨")
             return
         lv = dist_to_level(d)
         color = level_color(lv)
-        self.badge.config(text=f"  {level_text(lv)}  ", bg=color,
+        self.badge.config(text=f" 거리 {level_text(lv)} ", bg=color,
                           fg="#fff" if lv == LEVEL_DANGER else "#000")
         self.config(highlightbackground=color)
         self.dist.config(text="감지 없음" if d is None else f"{d:.2f} m", fg=color)
@@ -502,7 +509,7 @@ class Dashboard:
 
         self.term.append("대시보드 시작 — safety_monitor 연결 대기", "SYSTEM")
         if self.preview_sub.error:
-            self.term.append("3D 수신 포트 사용 불가 — 기존 안전 감시는 계속됩니다", "WARN")
+            self.term.append("3D 연결 확인 필요 · 기존 안전 감시는 독립 실행됩니다", "WARN")
         self._refresh()
 
     def _build(self):
@@ -700,9 +707,12 @@ class Dashboard:
     # ────────────────────────────────────────── 갱신
     def _refresh(self):
         self.clock.config(text=time.strftime("%H:%M:%S"))
+        preview_states = {}
         if getattr(self, "preview_sub", None) is not None:
-            self.lidar_l.update_3d(self.preview_sub.snapshot("left"))
-            self.lidar_r.update_3d(self.preview_sub.snapshot("right"))
+            for side, card in (("left", self.lidar_l), ("right", self.lidar_r)):
+                snapshot = self.preview_sub.snapshot(side)
+                preview_states[side] = snapshot.status
+                card.update_3d(snapshot)
         st, alive = self.sub.latest()
         self._update_recovery(st, alive)
         self._update_sos(st, alive)
@@ -812,6 +822,18 @@ class Dashboard:
                 text, color = "정상 · LiDAR 미사용", C_YELLOW
             else:
                 text, color = "정상", C_GREEN
+            preview_faults = []
+            for side, label in (("left", "왼쪽"), ("right", "오른쪽")):
+                state = preview_states.get(side)
+                if state is not None and state not in ("live", "empty"):
+                    reason = {"missing": "대기", "stale": "중단", "unavailable": "연결 확인"}.get(state, "확인 필요")
+                    preview_faults.append(label + " " + reason)
+            if preview_faults:
+                if text == "정상":
+                    text = "감시 정상"
+                text += " · 3D " + "/".join(preview_faults)
+                if color == C_GREEN:
+                    color = C_YELLOW
             self.overall.config(text="●  " + text, fg=color)
 
         self.root.after(self.REFRESH_MS, self._refresh)

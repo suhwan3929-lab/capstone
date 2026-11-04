@@ -16,9 +16,11 @@ import json
 import socket
 import threading
 import time
+import uuid
 
 import config
 from schema import SystemStatus
+from stream_order import StreamOrder
 
 
 class StatusPublisher:
@@ -28,10 +30,12 @@ class StatusPublisher:
         self.addr = addr or config.UDP_STATUS_ADDR
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._seq = 0
+        self._session = uuid.uuid4().hex
 
     def publish(self, status: SystemStatus):
         self._seq += 1
         status.seq = self._seq
+        status.session = self._session
         status.t = time.time()
         d = status.to_dict()
         d["v"] = config.SCHEMA_VERSION
@@ -57,6 +61,7 @@ class StatusSubscriber:
         self._arrived = 0.0
         self._seq = 0
         self._running = False
+        self._order = StreamOrder(2.0)
 
     def start(self):
         self._running = True
@@ -84,11 +89,12 @@ class StatusSubscriber:
                 if d.get("v") != config.SCHEMA_VERSION:
                     continue
                 seq = d.get("seq", 0)
+                status = SystemStatus.from_dict(d)
                 with self._lock:
-                    if seq <= self._seq and (self._seq - seq) < 1000:
-                        continue      # 순서 역전 폐기 (재시작은 수용)
+                    if not self._order.accept(seq, d.get("session")):
+                        continue
                     self._seq = seq
-                    self._latest = SystemStatus.from_dict(d)
+                    self._latest = status
                     self._arrived = time.monotonic()
             except socket.timeout:
                 continue
