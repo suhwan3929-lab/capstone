@@ -1,5 +1,7 @@
 # 고령자 보행기 안전 보조 시스템 — 소프트웨어
 
+> 최신 실기 기록: [2026-11-06 현황](docs/progress_2026-11-06.md) · [후속 트러블슈팅](docs/troubleshooting_history_20261106.md) · [읽기용 HTML](docs/troubleshooting_history_20261106.html). 전원 문제는 해결 보류 상태이며 전체 무인 기동 완료로 표시하지 않는다.
+
 > 최신 GUI·채널·9,600점 적용: [장치별 업데이트](docs/deploy_gui_channels.md).
 
 > 이전 정리: [2026-10-18 진행 현황](docs/progress_2026-10-18.md). 준비한 기능·과거 결과·실기 미확인을 구분한다.
