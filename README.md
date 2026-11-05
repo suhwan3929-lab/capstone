@@ -3,6 +3,12 @@
 Jetson은 ROS 2 LiDAR 처리, Raspberry Pi는 Python 안전 감시와 1024×600 가로 대시보드를 담당한다.
 게시 기준 브랜치는 **main**이다. GitHub 코드 반영과 실제 장치 적용은 각각 확인한다.
 
+## 2026-11-05 현재 점검 상태
+
+**GUI 개별 점검 완료, 사용자 확인. 남은 순서는 GPS 검사 → IMU 검사 → 전체 통합 검증이다.**
+
+[최종 점검 현황·완료 조건](capstone_code/docs/progress_2026-11-05.md)에서 센서 수신, 안전 기능, 최종 네트워크, 중단·복구·재부팅과 30분 운용 항목을 확인한다. GPS·IMU·통합 시험을 완료했다고 기록한 상태는 아니다.
+
 ## 2026-11-04 GUI·LiDAR 변경
 
 - 정면 3D 기본 화면, 2px 점, 고정 투영, 확대 눈금 1/5/10cm, 큰 시계.
@@ -18,6 +24,8 @@ Jetson은 ROS 2 LiDAR 처리, Raspberry Pi는 Python 안전 감시와 1024×600 
 
 ## 실행과 기록
 
+- [최신 진행 현황: 2026-11-05](capstone_code/docs/progress_2026-11-05.md)
+- [트러블슈팅 26개 사례](capstone_code/docs/troubleshooting_history_20261105.md)
 - [소프트웨어 구조·기본 실행](capstone_code/README.md)
 - [3D 점군·전송 형식](capstone_code/docs/lidar_3d_preview.md)
 - [Windows 두 USB 센서 시험](capstone_code/docs/usb_3d_pc_test.md)
