@@ -28,7 +28,7 @@ import time
 
 # ── 인자를 먼저 읽어 config를 확정한다 ────────────────────
 #   시뮬레이터/LiDAR 소스 결정이 모듈 import보다 앞서야 한다.
-def _parse_args():
+def _parse_args(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--tag", default="session", help="CSV 로그 태그(시나리오명)")
     ap.add_argument("--sim", action="store_true", help="하드웨어 없이 시뮬레이션")
@@ -36,8 +36,12 @@ def _parse_args():
     ap.add_argument("--calibrate", action="store_true", help="IMU 장착각 측정 후 종료")
     ap.add_argument("--no-ui-link", action="store_true", help="상태 UDP 송신 안 함")
     ap.add_argument("--no-alert", action="store_true", help="부저/LED 출력 끄기")
+    ap.add_argument("--no-notify", action="store_true",
+                    help="시험용: 외부 알림과 전송 대기 기록 생성 끄기")
+    ap.add_argument("--lidar-source", choices=("serial", "udp", "none"), default=None,
+                    help="이번 실행에만 적용할 LiDAR 입력")
     ap.add_argument("--list-scenarios", action="store_true")
-    return ap.parse_args()
+    return ap.parse_args(argv)
 
 
 ARGS = _parse_args()
@@ -51,11 +55,15 @@ if ARGS.scenario:
     config.SIM_MODE = True
 if ARGS.no_alert:
     config.ALERT_ENABLED = False
+if ARGS.lidar_source is not None:
+    config.LIDAR_SOURCE = ARGS.lidar_source
 
 import alerting  # noqa: E402
 import console  # noqa: E402
 import battery  # noqa: E402
 import notifier  # noqa: E402
+if ARGS.no_notify:
+    notifier.disable_for_test()
 import ntrip_client  # noqa: E402
 from tipover_monitor import TipoverMonitor  # noqa: E402
 from alerting import Alerter, tipover_state_to_level  # noqa: E402
@@ -146,6 +154,8 @@ def _is_moving(gps, imu) -> bool:
 # ══════════════════════════════════════════════════════════
 def main():
     args = ARGS
+    if args.no_notify:
+        log("시험 모드: 외부 알림을 보내거나 전송 대기로 저장하지 않습니다", "SYSTEM")
 
     if args.list_scenarios:
         from sensors import sim

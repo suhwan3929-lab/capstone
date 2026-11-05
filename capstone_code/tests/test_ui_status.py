@@ -266,7 +266,8 @@ def test_notification_results_are_distinct_and_do_not_claim_guardian_read():
     d = dashboard()
     for state, expected in (("queued", "전송 대기"), ("sending", "전송 중"),
                             ("accepted", "서버 접수 확인"), ("failed", "전송 실패"),
-                            ("unconfigured", "전송되지 않음"), ("", "결과 확인 불가")):
+                            ("unconfigured", "전송되지 않음"), ("disabled", "시험 모드"),
+                            ("", "결과 확인 불가")):
         d._update_sos(SystemStatus(tipover_state=TIPOVER_REPORTED,
                                   notification_state=state), True)
         text = d.sos_status.config.call_args.kwargs["text"]
@@ -276,6 +277,9 @@ def test_notification_results_are_distinct_and_do_not_claim_guardian_read():
     d._update_sos(SystemStatus(tipover_state=TIPOVER_CONFIRMED,
                               notification_state="accepted"), True)
     assert "서버 접수 확인" not in d.sos_status.config.call_args.kwargs["text"]
+    d._update_sos(SystemStatus(tipover_state=TIPOVER_CONFIRMED,
+                              notification_state="disabled"), True)
+    assert "시험 모드" in d.sos_status.config.call_args.kwargs["text"]
 
 
 def test_schema_supports_old_monitor_and_new_delivery_fields():
