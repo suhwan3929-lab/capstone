@@ -188,8 +188,15 @@ def preview_node():
     path = Path(__file__).resolve().parents[1] / "jetson" / "lidar_preview_node.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
     definitions = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))]
-    ns = dict(Node=object, time=time, full_xyz=full_xyz, encode_frame_chunks=wire.encode_frame_chunks,
-              point_cloud2=SimpleNamespace(read_points_numpy=lambda msg, **kw: msg.points))
+    def read_points(msg, **kwargs):
+        if msg.points.dtype.names:
+            return msg.points[list(kwargs["field_names"])]
+        return np.rec.fromarrays(msg.points.reshape(-1, 3).T, names="x,y,z")
+
+    ns = dict(Node=object, np=np, time=time, full_xyz=full_xyz,
+              encode_frame_chunks=wire.encode_frame_chunks,
+              point_cloud2=SimpleNamespace(read_points=read_points,
+                                          read_points_numpy=lambda msg, **kw: msg.points))
     exec(compile(ast.Module(body=definitions, type_ignores=[]), str(path), "exec"), ns)
     node = ns["LidarPreviewNode"].__new__(ns["LidarPreviewNode"])
     node.pending, node.last_capture = {}, {}
@@ -411,6 +418,32 @@ def test_full_node_sends_9600_and_consumes_sequence_after_partial_send_failure()
     node._receive("left", cloud(points, sec=2))
     node._send_latest()
     assert node.sequence["left"] == 3
+
+
+def test_mixed_type_cloud_preserves_xyz_order_and_all_9600_points_per_sensor():
+    # Match padded ROS records with differently typed color/intensity fields.
+    records = np.zeros(9600, dtype={
+        "names": ["rgba", "z", "x", "intensity", "y"],
+        "formats": ["u4", "f4", "f4", "u2", "f8"],
+        "offsets": [12, 8, 0, 16, 24], "itemsize": 32,
+    })
+    records["x"], records["rgba"], records["intensity"] = 1.0, 0xffabcdef, 65535
+    records["y"] = (np.arange(9600) % 160 - 80) / 1000
+    records["z"] = (np.arange(9600) // 160 - 30) / 1000
+    node = preview_node()
+    for side in ("left", "right"):
+        node._receive(side, cloud(records))
+    node._send_latest()
+    assert node.sock.sendto.call_count == 100
+    node.get_logger.return_value.warning.assert_not_called()
+    receiver = PreviewReceiver()
+    for call in node.sock.sendto.call_args_list:
+        receiver.ingest(call.args[0])
+    expected = [(1.0, (i % 160 - 80) / 1000, (i // 160 - 30) / 1000)
+                for i in range(9600)]
+    for side in ("left", "right"):
+        assert receiver.snapshot(side).status == "live"
+        assert receiver.snapshot(side).points == tuple(expected)
 
 
 def test_full_udp_loopback_transports_two_9600_point_frames():

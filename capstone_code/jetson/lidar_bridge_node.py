@@ -127,8 +127,10 @@ class LidarBridge(Node):
                                            valid * np.sin(angles), half))
 
     def _on_cloud(self, side, msg: PointCloud2):
-        pts = point_cloud2.read_points_numpy(
+        # Select XYZ by name so extra color/intensity datatypes do not reject the cloud.
+        records = point_cloud2.read_points(
             msg, field_names=("x", "y", "z"), skip_nans=True)
+        pts = np.column_stack((records["x"], records["y"], records["z"]))
         if pts.size == 0:
             self._store(side, np.empty(0), [])
             self._detect_curb(side, np.empty(0), np.empty(0))
