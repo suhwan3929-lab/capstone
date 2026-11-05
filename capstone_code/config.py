@@ -36,13 +36,17 @@ LIDAR_SOURCE = os.environ.get("WALKER_LIDAR_SOURCE", "serial")
 #: IMU = E2BOX **EBIMU24GV52** (2.4 GHz 무선 AHRS)
 #:   ⚠ 제품명의 "24G"는 **2.4 GHz 무선**이지 24 g가 아니다.
 #:     실제 가속도 측정범위는 **2 g ~ 16 g 설정 가능** → 반드시 ±16 g로 설정할 것.
-#:     ±2 g / ±4 g면 IMPACT_THRESHOLD_G(2.8 g)에 도달하지 못한다.
+#:     ±2 g는 IMPACT_THRESHOLD_G(2.8 g)에 도달하지 못한다. V6 범위는 별도 확인한다.
 #:   ⚠ 여기 적는 포트는 센서가 아니라 **무선 수신기(리시버)** 의 포트다.
 #:   ⚠ 센서에 자체 리튬폴리머 배터리가 있다. battery.py 는 이것을 보지 못한다.
 #:     시연 전 충전 체크리스트에 반드시 포함할 것.
 #:   내부 갱신 1000 Hz — 임계값 실험 때는 100 Hz보다 높여서 로깅할 수 있다.
 IMU_PORT = "COM6"
 IMU_BAUD = 115200
+IMU_PROTOCOL = "wired"     # 무선 수신기는 config_local.py에서 "wireless"로 지정
+IMU_CHANNEL = 100          # 무선 샘플의 CH-ID 선택. 무선 채널 설정은 바꾸지 않는다.
+IMU_SENSOR_ID = 0
+IMU_CONFIGURE_ON_CONNECT = True  # 이미 출력이 맞는 V6 수신 시험에서는 False
 
 #: GPS = **UB-ZED03** (u-blox ZED-F9P 탑재 보드로 추정)
 #:   ⚠ 확인 필요: ① USB/UART ② 기본 통신속도 ③ RTCM 입력 경로
