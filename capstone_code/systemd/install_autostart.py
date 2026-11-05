@@ -241,9 +241,11 @@ def main():
         subprocess.run(["systemctl", "daemon-reload"], check=True)
         subprocess.run(["systemd-analyze", "verify", "/etc/systemd/system/" + service], check=True)
     if args.role == "pi":
-        old = subprocess.run(["systemctl", "list-unit-files", "walker-ui.service", "--no-legend"],
+        # A missing pattern can return 1; match the legacy name in the full listing.
+        old = subprocess.run(["systemctl", "list-unit-files", "--no-legend"],
                              capture_output=True, text=True, check=True)
-        if old.stdout.strip():
+        units = {line.split()[0] for line in old.stdout.splitlines() if line.strip()}
+        if "walker-ui.service" in units:
             subprocess.run(["systemctl", "disable", "walker-ui.service"], check=True)
     if service:
         subprocess.run(["systemctl", "enable", service], check=True)
