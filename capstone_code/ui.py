@@ -36,7 +36,7 @@ from lidar_preview_view import Lidar3DPreview
 console.setup()
 
 try:
-    import tkintermapview
+    from map_view import WalkerMapView
     MAP_AVAILABLE = True
 except ImportError:
     MAP_AVAILABLE = False
@@ -372,10 +372,15 @@ class GPSCard(tk.Frame):
         self._last_map_t = 0.0
         self.marker = None
         if MAP_AVAILABLE:
-            self.map = tkintermapview.TkinterMapView(self, corner_radius=0)
+            self.map_status = tk.Label(self, text="위치 수신 후 지도 표시", bg=C_CARD,
+                                       fg=C_DIMWHITE, font=("Segoe UI", 8), wraplength=170)
+            self.map_status.pack(side=tk.BOTTOM)
+            tk.Label(self, text=config.MAP_ATTRIBUTION, bg=C_CARD, fg=C_DIMWHITE,
+                     font=("Segoe UI", 7)).pack(side=tk.BOTTOM, pady=(0, 4))
+            self.map = WalkerMapView(self, corner_radius=0, cache_path=config.MAP_CACHE_PATH,
+                                     tile_url=config.MAP_TILE_URL, status_callback=self._map_status)
             self.map.pack(fill=tk.BOTH, expand=True, padx=14, pady=(0, 14))
             self.map.set_zoom(15)
-            self.map.set_position(35.1595, 126.8526)
             self.marker = None
         else:
             c = tk.Label(self, bg="#111", fg=C_DIMWHITE, bd=0, highlightthickness=1,
@@ -417,14 +422,23 @@ class GPSCard(tk.Frame):
         pos = (round(gps.lat, 6), round(gps.lon, 6))
         if pos != self._last_pos and (now - self._last_map_t) >= 1.0:
             self._last_pos, self._last_map_t = pos, now
-            self.map.set_position(gps.lat, gps.lon)
+            self.map.set_gps_position(gps.lat, gps.lon)
             if self.marker is None:
                 self.marker = self.map.set_marker(gps.lat, gps.lon, text="현재 위치")
             else:
                 self.marker.set_position(gps.lat, gps.lon)
 
+    def _map_status(self, state):
+        messages = {"ready": "", "waiting": "위치 수신 후 지도 표시",
+                    "loading": "지도 연결 중", "blocked": "지도 연결 제한 · 잠시 후 재시도",
+                    "offline": "지도 연결 안 됨 · 좌표는 별도 표시"}
+        self.map_status.config(text=messages.get(state, "지도 연결 중"))
+
     def _clear_position(self):
         self.coord.config(text="현재 위치 확인 불가", fg=C_GRAY)
+        map_widget = self.__dict__.get("map")
+        if map_widget is not None:
+            map_widget.pause()
         if self.marker is not None:
             self.marker.delete()
             self.marker = None
