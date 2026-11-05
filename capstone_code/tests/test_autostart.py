@@ -145,4 +145,49 @@ def test_gui_only_install_never_enables_or_writes_safety_service():
     files = installed.call_args.args[0]
     assert len(files) == 2 and all(path.suffix in (".sh", ".desktop") for path in files)
     assert [call.args[0] for call in run.call_args_list] == [
-        ["systemctl", "list-unit-files", "walker-ui.service", "--no-legend"]]
+        ["systemctl", "list-unit-files", "--no-legend"]]
+
+
+def test_gui_install_handles_a_missing_or_existing_legacy_service():
+    for present in (False, True):
+        main = runpy.run_path(str(INSTALLER))["main"]
+        commands = []
+
+        def systemctl(command, **kwargs):
+            commands.append(command)
+            # Some systemd releases return 1 for a pattern with no matches.
+            if command == ["systemctl", "list-unit-files", "walker-ui.service", "--no-legend"]:
+                raise subprocess.CalledProcessError(1, command, output="", stderr="")
+            rows = "ssh.service enabled enabled\n"
+            if present:
+                rows += "walker-ui.service enabled enabled\n"
+            return subprocess.CompletedProcess(command, 0, stdout=rows, stderr="")
+
+        args = [str(INSTALLER), "pi", "--gui-only"]
+        installed = Mock(return_value=Path("/var/backups/walker-autostart/test"))
+        with patch.dict(main.__globals__, preflight=Mock(return_value=object()),
+                        install_files=installed), patch.object(sys, "argv", args), \
+                patch.object(sys, "platform", "linux"), \
+                patch.object(os, "geteuid", return_value=0, create=True), \
+                patch.object(subprocess, "run", side_effect=systemctl), \
+                redirect_stdout(io.StringIO()):
+            assert main() == 0
+        assert (["systemctl", "disable", "walker-ui.service"] in commands) == present
+        assert not any(command[:2] == ["systemctl", "enable"] for command in commands)
+
+
+def test_gui_install_keeps_systemctl_failures_visible():
+    main = runpy.run_path(str(INSTALLER))["main"]
+    error = subprocess.CalledProcessError(1, ["systemctl"], stderr="Failed to connect to bus")
+    args = [str(INSTALLER), "pi", "--gui-only"]
+    with patch.dict(main.__globals__, preflight=Mock(return_value=object()),
+                    install_files=Mock(return_value=Path("/backup"))), \
+            patch.object(sys, "argv", args), patch.object(sys, "platform", "linux"), \
+            patch.object(os, "geteuid", return_value=0, create=True), \
+            patch.object(subprocess, "run", side_effect=error):
+        try:
+            main()
+        except subprocess.CalledProcessError as caught:
+            assert caught is error
+        else:
+            raise AssertionError("A real systemctl failure was ignored")
