@@ -39,9 +39,24 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--send", action="store_true", help="테스트 채널로 메시지 전송")
     ap.add_argument("--prompt", action="store_true", help="채널 ID와 봇 토큰을 이번 실행에만 입력")
+    ap.add_argument("--secrets-file", help="보호된 장치 웹훅 설정 파일")
+    ap.add_argument("--gps-location", action="store_true", help="Pi 실제 GPS 위치 첨부")
+    ap.add_argument("--map-image", action="store_true", help="GPS 지도 이미지 첨부 (--gps-location 필요)")
     args = ap.parse_args()
     if not args.send:
         ap.error("전송하려면 --send를 지정하세요")
+    if args.map_image and not args.gps_location:
+        ap.error("--map-image는 --gps-location과 함께 사용하세요")
+    if args.prompt and args.secrets_file:
+        ap.error("--prompt와 --secrets-file은 함께 사용할 수 없습니다")
+    if args.secrets_file:
+        from webhook_settings import load_webhook
+        try:
+            config.WEBHOOK_URL = load_webhook(args.secrets_file)
+            config.NOTIFY_BACKEND = "webhook"
+        except (OSError, ValueError):
+            print("보호된 웹훅 설정을 읽지 못했습니다. 저장 상태와 권한을 확인하세요.")
+            return 1
     if args.prompt:
         if not notifier.REQUESTS_AVAILABLE:
             print("requests가 설치된 Python으로 실행하세요. 아직 입력하거나 전송하지 않았습니다.")
@@ -56,10 +71,25 @@ def main():
         print("Discord 설정 또는 requests 설치를 확인하세요. 비밀값은 출력하지 않습니다.")
         return 1
     notifier._log = lambda msg, level="INFO": print(level, msg, flush=True)
-    ok = notifier._post_with_retry({
+    payload = {
         "content": "🧪 [연결 시험] 보행기 Discord 신고 연결 확인 — 실제 사고가 아닙니다.",
         "allowed_mentions": {"parse": []},
-    })
+    }
+    image_bytes = None
+    if args.gps_location:
+        from gps_map import read_pi_fix, render_map, test_payload
+        try:
+            print("Pi GPS 위치를 기다립니다. 최대 15초.", flush=True)
+            fix = read_pi_fix()
+            if args.map_image:
+                print("표시할 위치의 지도 이미지를 준비합니다.", flush=True)
+                image_bytes = render_map(fix.lat, fix.lon)
+            payload = test_payload(fix, with_image=bool(image_bytes))
+        except (OSError, ValueError):
+            print("GPS 위치 또는 지도 이미지를 확인하지 못했습니다. 기존 안전감시 종료/위성 수신/인터넷을 확인하세요. 전송하지 않았습니다.")
+            return 1
+    ok = (notifier._post_with_retry(payload, image_bytes=image_bytes) if image_bytes
+          else notifier._post_with_retry(payload))
     print("Discord 전송 성공 — 채널에서 시험 메시지를 확인하세요." if ok else "Discord 전송 실패")
     return 0 if ok else 1
 
