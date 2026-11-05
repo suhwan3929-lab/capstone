@@ -8,6 +8,23 @@
 프로세스를 분리하는 목적은 성능이 아니라 **격리**다.
 GUI가 멈춰도 전도 감지는 계속 동작해야 한다.
 
+## 현재 설치기로 GUI만 자동 실행
+
+라이다 점군 화면을 먼저 검증하고 IMU/GPS·안전 감시는 나중에 설정할 때 사용한다.
+실제 Pi 계정과 저장소 경로를 확인한 다음 실행한다.
+
+```bash
+sudo python3 /home/yu/capstone/capstone_code/systemd/install_autostart.py pi --user yu --project-dir /home/yu/capstone/capstone_code --gui-only
+```
+
+`--gui-only`는 GUI 시작 스크립트와 바탕화면 자동 실행 항목만 설치하고,
+안전 감시 서비스 파일이나 활성화 상태를 변경하지 않는다. 기존 GUI 파일은 백업한다.
+기존 `walker-ui.service`가 있으면 다음 부팅에서 GUI가 중복 실행되지 않도록 비활성화한다.
+현재 실행 중인 프로그램은 시작하거나 종료하지 않는다.
+GUI는 바탕화면 로그인 때 실행되므로 전원 투입만으로 표시하려면 Ubuntu 자동 로그인이 필요하다.
+라이다 USB·IMU/GPS·UDP 거리 설정을 검증한 후에만 `--gui-only` 없이 전체 설치를 진행한다.
+`--no-alert`는 부저/LED 설정이며 Discord 전송을 끄는 옵션은 아니다.
+
 ## 적용 전 경로·계정 확인
 
 이 문서와 기존 유닛은 코드가 `/opt/walker`에 직접 설치된 템플릿이다.

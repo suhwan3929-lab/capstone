@@ -11,7 +11,9 @@ import time
 import uuid
 
 
-def render(role, user, home, project, pi_host=None, alerts=False):
+def render(role, user, home, project, pi_host=None, alerts=False, gui_only=False):
+    if gui_only and (role != "pi" or alerts):
+        raise ValueError("--gui-only is for Pi and cannot enable safety alerts")
     if not re.fullmatch(r"[a-z_][a-z0-9_-]*", user):
         raise ValueError("Invalid service user")
     home, project = PurePosixPath(home), PurePosixPath(project)
@@ -78,11 +80,13 @@ Exec=/usr/local/libexec/walker/start-pi-ui.sh
 Terminal=false
 X-GNOME-Autostart-enabled=true
 """
-        return {
-            PurePosixPath("/etc/systemd/system/walker-safety.service"): service,
+        files = {
             helper / "start-pi-ui.sh": launcher,
             home / ".config/autostart/walker-ui.desktop": desktop,
         }
+        if not gui_only:
+            files[PurePosixPath("/etc/systemd/system/walker-safety.service")] = service
+        return files
     if role != "jetson":
         raise ValueError("Unknown role")
     if not pi_host or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]{0,252}", pi_host):
@@ -146,26 +150,28 @@ WantedBy=multi-user.target
     }
 
 
-def preflight(role, user, project, home):
+def preflight(role, user, project, home, gui_only=False):
     """Check the board before writing configuration, without starting sensors."""
     import pwd
     import grp
     account = pwd.getpwnam(user)
     if Path(account.pw_dir) != home:
         raise ValueError("Account home does not match")
-    if grp.getgrnam("dialout").gr_gid not in os.getgrouplist(user, account.pw_gid):
+    if not gui_only and grp.getgrnam("dialout").gr_gid not in os.getgrouplist(user, account.pw_gid):
         raise ValueError("Service user must belong to dialout for serial sensor access")
     if role == "pi":
-        for name in ("safety_monitor.py", "ui.py", "config.py"):
+        required = ("ui.py", "config.py") if gui_only else ("safety_monitor.py", "ui.py", "config.py")
+        for name in required:
             if not (project / name).is_file():
                 raise FileNotFoundError(str(project / name))
         python = "/opt/walker/venv/bin/python"
+        ready = "not config.SIM_MODE" if gui_only else "not config.SIM_MODE and config.LIDAR_SOURCE == 'udp'"
         check = ("import sys; sys.path.insert(0, sys.argv[1]); import config; "
-                 "sys.exit(0 if not config.SIM_MODE and config.LIDAR_SOURCE == 'udp' else 2)")
+                 f"sys.exit(0 if {ready} else 2)")
         subprocess.run(["runuser", "-u", user, "--", python, "-c", check, str(project)],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["runuser", "-u", user, "--", python, "-c",
-                        "import tkinter, serial, requests"], check=True)
+        imports = "import tkinter, numpy, PIL" if gui_only else "import tkinter, serial, requests"
+        subprocess.run(["runuser", "-u", user, "--", python, "-c", imports], check=True)
         subprocess.run(["flock", "--version"], check=True, stdout=subprocess.DEVNULL)
     else:
         for setup in (Path("/opt/ros/humble/setup.bash"),
@@ -206,13 +212,17 @@ def main():
     parser.add_argument("--pi-host")
     parser.add_argument("--enable-alerts", action="store_true",
                         help="Pi only: enable buzzer/LED instead of --no-alert trial mode")
+    parser.add_argument("--gui-only", action="store_true",
+                        help="Pi only: install desktop GUI startup without changing safety service registration")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    if args.gui_only and (args.role != "pi" or args.enable_alerts):
+        parser.error("--gui-only is for pi and cannot be combined with --enable-alerts")
     user = args.user or ("yu" if args.role == "pi" else "walker")
     home = PurePosixPath("/home") / user
     project = PurePosixPath(args.project_dir or ("/opt/walker/capstone_code" if args.role == "pi"
                                                 else str(home / "walker_bridge_ws")))
-    files = render(args.role, user, home, project, args.pi_host, args.enable_alerts)
+    files = render(args.role, user, home, project, args.pi_host, args.enable_alerts, args.gui_only)
     if args.dry_run:
         for path, content in files.items():
             print(f"\n{path}\n{content}")
@@ -220,29 +230,35 @@ def main():
     if sys.platform != "linux" or os.geteuid() != 0:
         parser.error("Run with sudo on Ubuntu, or use --dry-run")
     home, project = Path(str(home)), Path(str(project))
-    account = preflight(args.role, user, project, home)
-    if args.role == "pi":
+    account = preflight(args.role, user, project, home, args.gui_only)
+    if args.role == "pi" and not args.gui_only:
         logs = project / "logs"
         logs.mkdir(exist_ok=True)
         os.chown(logs, account.pw_uid, account.pw_gid)
     backup = install_files(files, home, account)
-    subprocess.run(["systemctl", "daemon-reload"], check=True)
-    service = "walker-safety.service" if args.role == "pi" else "walker-lidar.service"
-    subprocess.run(["systemd-analyze", "verify", "/etc/systemd/system/" + service], check=True)
+    service = None if args.gui_only else ("walker-safety.service" if args.role == "pi" else "walker-lidar.service")
+    if service:
+        subprocess.run(["systemctl", "daemon-reload"], check=True)
+        subprocess.run(["systemd-analyze", "verify", "/etc/systemd/system/" + service], check=True)
     if args.role == "pi":
         old = subprocess.run(["systemctl", "list-unit-files", "walker-ui.service", "--no-legend"],
                              capture_output=True, text=True, check=True)
         if old.stdout.strip():
             subprocess.run(["systemctl", "disable", "walker-ui.service"], check=True)
-    subprocess.run(["systemctl", "enable", service], check=True)
-    subprocess.run(["systemctl", "is-enabled", service], check=True)
-    print("Installed and enabled for next boot: " + service)
+    if service:
+        subprocess.run(["systemctl", "enable", service], check=True)
+        subprocess.run(["systemctl", "is-enabled", service], check=True)
+        print("Installed and enabled for next boot: " + service)
+    else:
+        print("Installed desktop GUI autostart only.")
+        print("Safety monitor service registration was not changed.")
     print("Existing running programs were not started or stopped.")
     print("Previous configuration backup: " + str(backup))
     if args.role == "pi":
         print("GUI starts on desktop login. Enable Ubuntu Automatic Login for power-on GUI.")
-        print("Buzzer/LED: " + ("enabled by config" if args.enable_alerts else "disabled (--no-alert)"))
-        print("Discord still requires valid /etc/walker/secrets.env and verified delivery.")
+        if not args.gui_only:
+            print("Buzzer/LED: " + ("enabled by config" if args.enable_alerts else "disabled (--no-alert)"))
+            print("Discord still requires valid /etc/walker/secrets.env and verified delivery.")
     return 0
 
 

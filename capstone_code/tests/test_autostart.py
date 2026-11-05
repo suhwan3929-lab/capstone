@@ -1,10 +1,15 @@
 """Check boot isolation and the deployed Pi/Jetson configuration, without hardware."""
 import ast
+from contextlib import redirect_stdout
 from configparser import ConfigParser
+import io
+import os
 from pathlib import Path, PurePosixPath
 import runpy
 import subprocess
 import sys
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 INSTALLER = Path(__file__).resolve().parents[1] / "systemd/install_autostart.py"
 render = runpy.run_path(str(INSTALLER))["render"]
@@ -90,3 +95,54 @@ def test_dry_run_never_writes_linux_configuration():
     result = subprocess.run([sys.executable, str(INSTALLER), "jetson", "--pi-host",
                              "192.168.0.173", "--dry-run"], capture_output=True, text=True, check=True)
     assert "start_drivers:=true" in result.stdout
+
+
+def test_gui_only_render_has_no_safety_service():
+    files = render("pi", "yu", "/home/yu", "/home/yu/capstone/capstone_code", gui_only=True)
+    assert set(files) == {PurePosixPath("/usr/local/libexec/walker/start-pi-ui.sh"),
+                          PurePosixPath("/home/yu/.config/autostart/walker-ui.desktop")}
+    assert "cd /home/yu/capstone/capstone_code" in "\n".join(files.values())
+    assert "safety_monitor.py" not in "\n".join(files.values())
+
+
+def test_gui_only_cli_preview_and_invalid_role_combinations():
+    result = subprocess.run([sys.executable, str(INSTALLER), "pi", "--gui-only", "--dry-run"],
+                            capture_output=True, text=True, check=True)
+    assert "walker-ui.desktop" in result.stdout and "walker-safety.service" not in result.stdout
+    for args in (["jetson", "--gui-only", "--pi-host", "192.168.10.2"],
+                 ["pi", "--gui-only", "--enable-alerts"]):
+        result = subprocess.run([sys.executable, str(INSTALLER), *args, "--dry-run"],
+                                capture_output=True, text=True)
+        assert result.returncode == 2 and "--gui-only" in result.stderr
+
+
+def test_gui_only_preflight_does_not_require_serial_group_or_udp_distance_source():
+    preflight = runpy.run_path(str(INSTALLER))["preflight"]
+    account = SimpleNamespace(pw_dir="/home/yu", pw_uid=1000, pw_gid=1000)
+    group = Mock(side_effect=AssertionError("GUI must not require serial access"))
+    with patch.dict(sys.modules, {"pwd": SimpleNamespace(getpwnam=lambda name: account),
+                                  "grp": SimpleNamespace(getgrnam=group)}), \
+            patch.object(Path, "is_file", return_value=True), \
+            patch.object(subprocess, "run") as run:
+        assert preflight("pi", "yu", Path("/home/yu/capstone/capstone_code"),
+                         Path("/home/yu"), gui_only=True) is account
+        group.assert_not_called()
+        probe = run.call_args_list[0].args[0]
+        assert "not config.SIM_MODE" in probe[6] and "LIDAR_SOURCE" not in probe[6]
+
+
+def test_gui_only_install_never_enables_or_writes_safety_service():
+    main = runpy.run_path(str(INSTALLER))["main"]
+    installed = Mock(return_value=Path("/var/backups/walker-autostart/test"))
+    args = [str(INSTALLER), "pi", "--gui-only", "--project-dir", "/home/yu/capstone/capstone_code"]
+    with patch.dict(main.__globals__, preflight=Mock(return_value=object()),
+                    install_files=installed), patch.object(sys, "argv", args), \
+            patch.object(sys, "platform", "linux"), \
+            patch.object(os, "geteuid", return_value=0, create=True), \
+            patch.object(subprocess, "run", return_value=SimpleNamespace(stdout="")) as run, \
+            redirect_stdout(io.StringIO()):
+        assert main() == 0
+    files = installed.call_args.args[0]
+    assert len(files) == 2 and all(path.suffix in (".sh", ".desktop") for path in files)
+    assert [call.args[0] for call in run.call_args_list] == [
+        ["systemctl", "list-unit-files", "walker-ui.service", "--no-legend"]]
