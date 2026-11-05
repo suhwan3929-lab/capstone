@@ -3,6 +3,8 @@ import importlib
 import importlib.util
 import json
 import pathlib
+import os
+import subprocess
 import sys
 import tempfile
 from contextlib import contextmanager
@@ -70,6 +72,82 @@ def test_bot_configuration_validation():
             assert not n.is_configured()
         with patch.object(n, "REQUESTS_AVAILABLE", False):
             assert not n.is_configured()
+        http.post.assert_not_called()
+
+
+def test_offline_trial_never_starts_worker_or_reads_or_writes_spool():
+    with transport() as (n, http), patch.object(n, "_restore_spool") as restore, \
+            patch.object(n.threading, "Thread") as thread:
+        spool = pathlib.Path(config.NOTIFY_SPOOL)
+        spool.write_text('{"existing":"preserve"}\n', encoding="utf-8")
+        before = spool.read_bytes()
+        n.disable_for_test()
+        assert not n.is_configured()
+        n.start()
+        n.send_preliminary(ImuSample(valid=True), GpsFix(), None)
+        n.send_confirmed(ImuSample(valid=True), GpsFix(), None, 3.0)
+        n.send_cancelled("bench test")
+        assert n.pending() == 0
+        assert n.delivery_status() == {"id": "", "state": "disabled"}
+        assert not n._post_with_retry({"content": "blocked test"})
+        assert spool.read_bytes() == before
+        restore.assert_not_called()
+        thread.assert_not_called()
+        http.post.assert_not_called()
+
+
+def test_offline_trial_rejects_switching_after_notifier_started():
+    with transport() as (n, http):
+        n._started = True
+        try:
+            n.disable_for_test()
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("가동 중인 알림 프로세스를 시험 모드로 바꿈")
+        assert n.is_configured()
+        http.post.assert_not_called()
+
+
+def test_offline_trial_cli_keeps_real_sensors_and_explicit_lidar_source():
+    with patch.object(sys, "argv", ["safety_monitor.py"]):
+        safety = importlib.import_module("safety_monitor")
+    args = safety._parse_args(["--no-notify", "--no-alert", "--lidar-source", "none"])
+    assert args.no_notify and args.no_alert and not args.sim
+    assert args.lidar_source == "none"
+    defaults = safety._parse_args([])
+    assert not defaults.no_notify and defaults.lidar_source is None
+
+
+def test_offline_trial_entrypoint_applies_flags_before_sensor_imports():
+    code = (
+        "import safety_monitor, config, notifier; "
+        "assert config.LIDAR_SOURCE == 'none'; "
+        "assert config.SIM_MODE is False; assert config.ALERT_ENABLED is False; "
+        "assert notifier.delivery_status()['state'] == 'disabled'"
+    )
+    env = dict(os.environ, WALKER_SIM="0")
+    result = subprocess.run([sys.executable, "-c", code, "--no-notify", "--no-alert",
+                             "--lidar-source", "none"], cwd=ROOT, env=env,
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+
+
+def test_offline_trial_sos_has_no_http_queue_or_later_delivery_record():
+    import tipover_monitor
+    from buttons import CMD_SOS
+    from states import TIPOVER_CONFIRMED, TIPOVER_REPORTED
+    with transport() as (n, http), patch.object(tipover_monitor, "notifier", n):
+        n.disable_for_test()
+        m = tipover_monitor.TipoverMonitor()
+        m.submit(CMD_SOS)
+        m.step(ImuSample(valid=False), GpsFix())
+        assert m.state == TIPOVER_CONFIRMED
+        m.step(ImuSample(valid=False), GpsFix())
+        assert m.state == TIPOVER_REPORTED
+        assert n.delivery_status()["state"] == "disabled"
+        assert n.pending() == 0
+        assert not pathlib.Path(config.NOTIFY_SPOOL).exists()
         http.post.assert_not_called()
 
 

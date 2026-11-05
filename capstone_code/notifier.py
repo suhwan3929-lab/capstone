@@ -37,6 +37,7 @@ except ImportError:
 _q: "queue.Queue[dict]" = queue.Queue(maxsize=64)
 _log = None
 _started = False
+_disabled_for_test = False
 _spool_lock = threading.Lock()
 _delivery_lock = threading.Lock()
 _delivery = {"id": "", "state": ""}
@@ -57,9 +58,17 @@ def _emit(msg, level="INFO"):
 # ══════════════════════════════════════════════════════════
 # 공개 API
 # ══════════════════════════════════════════════════════════
+def disable_for_test():
+    """새 시험 프로세스에서 전송과 대기 기록 생성을 함께 차단한다."""
+    global _disabled_for_test
+    if _started:
+        raise RuntimeError("시험용 알림 차단은 notifier.start() 전에만 가능합니다")
+    _disabled_for_test = True
+
+
 def is_configured() -> bool:
     """[H1] 플레이스홀더에 속지 않는 진짜 검사."""
-    if not REQUESTS_AVAILABLE:
+    if _disabled_for_test or not REQUESTS_AVAILABLE:
         return False
     if config.NOTIFY_BACKEND == "bot":
         channel = config.DISCORD_CHANNEL_ID
@@ -75,6 +84,9 @@ def is_configured() -> bool:
 def start(log_callback=None):
     global _log, _started
     _log = log_callback
+    if _disabled_for_test:
+        _emit("시험 모드: 외부 알림 및 전송 대기 기록 비활성화", "WARN")
+        return
     if not REQUESTS_AVAILABLE:
         _emit("⚠ requests 미설치 — 외부 알림 비활성화 "
               "(pip install requests)", "ERROR")
@@ -106,6 +118,8 @@ def pending() -> int:
 
 def delivery_status() -> dict:
     """최근 확정 알림의 상태. 서버 접수와 보호자 열람은 구분한다."""
+    if _disabled_for_test:
+        return {"id": "", "state": "disabled"}
     with _delivery_lock:
         return dict(_delivery)
 
@@ -125,6 +139,8 @@ def _track_delivery(item, state, *, new=False):
 # 내부
 # ══════════════════════════════════════════════════════════
 def _enqueue(kind, imu, gps, age, peak_g=None, reason=None):
+    if _disabled_for_test:
+        return
     item = {
         "kind": kind,
         "utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -270,6 +286,8 @@ def _restore_spool():
 
 def _discord_post(**kwargs):
     """두 전송 방식이 같은 큐·스풀·메시지 구성을 사용한다."""
+    if _disabled_for_test:
+        raise RuntimeError("시험 모드에서는 외부 알림을 전송할 수 없습니다")
     if config.NOTIFY_BACKEND == "bot":
         url = f"https://discord.com/api/v10/channels/{config.DISCORD_CHANNEL_ID}/messages"
         auth = {"headers": {"Authorization": f"Bot {config.DISCORD_BOT_TOKEN}"}}
@@ -282,6 +300,8 @@ def _discord_post(**kwargs):
 
 
 def _post_with_retry(payload, *, image_bytes=None) -> bool:
+    if _disabled_for_test:
+        return False
     delay = 1.0
     for attempt in range(config.WEBHOOK_MAX_RETRY):
         try:

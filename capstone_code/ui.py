@@ -965,9 +965,12 @@ class Dashboard:
                 "accepted": ("Discord 서버 접수 확인 · 보호자 열람 여부는 확인 불가", C_GREEN),
                 "failed": ("사고 알림 전송 실패 · 통신/알림 설정 확인 필요", C_RED),
                 "unconfigured": ("외부 알림 설정 없음 · 보호자에게 전송되지 않음", C_RED),
+                "disabled": ("시험 모드 · 외부 알림 전송 안 함", C_YELLOW),
             }
             # 확정 직후에는 이전 사고의 전송 성공을 새 사고에 표시하지 않는다.
-            if status.tipover_state == TIPOVER_CONFIRMED:
+            if status.notification_state == "disabled":
+                text, color = states["disabled"]
+            elif status.tipover_state == TIPOVER_CONFIRMED:
                 text, color = "사고 확정 확인 · 알림 처리 중", C_YELLOW
             else:
                 text, color = states.get(status.notification_state,
