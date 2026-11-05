@@ -3,11 +3,11 @@
 Jetson은 ROS 2 LiDAR 처리, Raspberry Pi는 Python 안전 감시와 1024×600 가로 대시보드를 담당한다.
 게시 기준 브랜치는 **main**이다. GitHub 코드 반영과 실제 장치 적용은 각각 확인한다.
 
-## 2026-11-05 현재 점검 상태
+## 2026-11-06 현재 점검 상태
 
-**GUI 개별 점검 완료, 사용자 확인. 남은 순서는 GPS 검사 → IMU 검사 → 전체 통합 검증이다.**
+**GPS·IMU 개별 수신과 기존 웹훅의 문자·실제 GPS 지도 수신을 확인했다. Pi 안전서비스는 재부팅 뒤에도 active였다.**
 
-[최종 점검 현황·완료 조건](capstone_code/docs/progress_2026-11-05.md)에서 센서 수신, 안전 기능, 최종 네트워크, 중단·복구·재부팅과 30분 운용 항목을 확인한다. GPS·IMU·통합 시험을 완료했다고 기록한 상태는 아니다.
+화면은 **같은 전원에서 USB 장치를 제거하고 켠 뒤 복구**됐다. **전원 문제 해결은 사용자 요청으로 보류**하며, 전체 장치 연결 상태의 반복 기동·실제 GUI SOS 전달·최종 장착각·장시간 운용은 미완료다. [최신 진행 현황](capstone_code/docs/progress_2026-11-06.md)과 [후속 트러블슈팅 18개 사례](capstone_code/docs/troubleshooting_history_20261106.md)에 확인 경계를 기록했다.
 
 ## 2026-11-04 GUI·LiDAR 변경
 
@@ -24,8 +24,10 @@ Jetson은 ROS 2 LiDAR 처리, Raspberry Pi는 Python 안전 감시와 1024×600 
 
 ## 실행과 기록
 
-- [최신 진행 현황: 2026-11-05](capstone_code/docs/progress_2026-11-05.md)
-- [트러블슈팅 26개 사례](capstone_code/docs/troubleshooting_history_20261105.md)
+- [최신 진행 현황: 2026-11-06](capstone_code/docs/progress_2026-11-06.md)
+- [후속 트러블슈팅 18개 사례: 2026-11-06](capstone_code/docs/troubleshooting_history_20261106.md)
+- [후속 트러블슈팅 HTML](capstone_code/docs/troubleshooting_history_20261106.html)
+- [이전 트러블슈팅 26개 사례: 2026-11-05](capstone_code/docs/troubleshooting_history_20261105.md)
 - [소프트웨어 구조·기본 실행](capstone_code/README.md)
 - [3D 점군·전송 형식](capstone_code/docs/lidar_3d_preview.md)
 - [Windows 두 USB 센서 시험](capstone_code/docs/usb_3d_pc_test.md)
@@ -37,4 +39,4 @@ Jetson은 ROS 2 LiDAR 처리, Raspberry Pi는 Python 안전 감시와 1024×600 
 - [이전 진행 기록: 2026-10-18](capstone_code/docs/progress_2026-10-18.md)
 - [단계별 최종 시험](최종%20테스트.md)
 
-개인 설정·로그·원본 센서 캡처·Python 환경은 게시하지 않는다. 무선 IMU 등 작업 원본의 별도 후속 변경은 이번 범위에 포함하지 않았다.
+개인 설정·로그·원본 센서 캡처·Python 환경은 게시하지 않는다. main의 무선 IMU·지도·웹훅 후속 변경과 실기 결과는 최신 진행 문서에서 확인한다. 작업 원본의 독립 변경 전체가 게시됐다고 가정하지 않는다.
