@@ -20,7 +20,7 @@ def tool():
 
 @contextlib.contextmanager
 def settings():
-    with patch.multiple(config, NOTIFY_BACKEND="webhook", DISCORD_CHANNEL_ID="", DISCORD_BOT_TOKEN=""):
+    with patch.multiple(config, NOTIFY_BACKEND="webhook", WEBHOOK_URL="", DISCORD_CHANNEL_ID="", DISCORD_BOT_TOKEN=""):
         yield
 
 

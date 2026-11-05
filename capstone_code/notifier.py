@@ -347,11 +347,8 @@ def _post_image(image_bytes, item):
 
 def _fetch_static_map(lat, lon):
     try:
-        url = ("https://staticmap.openstreetmap.de/staticmap.php"
-               f"?center={lat},{lon}&zoom=16&size=600x400"
-               f"&markers={lat},{lon},red-pushpin")
-        r = requests.get(url, timeout=config.MAP_FETCH_TIMEOUT)
-        return r.content if r.status_code == 200 and r.content else None
+        from gps_map import render_map
+        return render_map(lat, lon, timeout=config.MAP_FETCH_TIMEOUT)
     except Exception:
         return None
 
