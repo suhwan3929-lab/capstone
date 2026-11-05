@@ -10,6 +10,7 @@ import tempfile
 import time
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
+from urllib.parse import urlsplit
 
 from PIL import Image
 
@@ -144,7 +145,8 @@ def test_gps_payload_is_nonincident_timestamped_and_has_attachment_reference():
     assert embed["image"]["url"] == "attachment://map.png"
     assert "OpenStreetMap" in embed["footer"]["text"]
     assert "실제 위치 오차" in embed["description"]
-    assert any("openstreetmap.org" in field["value"] for field in embed["fields"])
+    links = [urlsplit(field["value"]) for field in embed["fields"] if field["name"] == "지도"]
+    assert len(links) == 1 and links[0].scheme == "https" and links[0].hostname == "www.openstreetmap.org"
     assert any("UTC" in field["name"] for field in embed["fields"])
 
 
