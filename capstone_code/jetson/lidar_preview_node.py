@@ -4,6 +4,7 @@ import secrets
 import socket
 import time
 
+import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy
@@ -62,8 +63,10 @@ class LidarPreviewNode(Node):
             if capture < 0 or (capture != 0 and self.last_capture.get(side) == capture):
                 continue
             try:
-                points = point_cloud2.read_points_numpy(msg, field_names=("x", "y", "z"),
-                                                       skip_nans=True)
+                # Humble's read_points_numpy rejects mixed color/intensity fields too.
+                records = point_cloud2.read_points(msg, field_names=("x", "y", "z"),
+                                                  skip_nans=True)
+                points = np.column_stack((records["x"], records["y"], records["z"]))
                 points_mm = full_xyz(points, self.profile)
                 sequence = (self.sequence[side] + 1) & 0xffffffff
                 # Never reuse an identifier after a partially sent frame.

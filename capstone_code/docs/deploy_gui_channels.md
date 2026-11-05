@@ -134,6 +134,18 @@ ros2 pkg executables walker_lidar
 ```
 
 출력에 `lidar_bridge_node`, `lidar_preview_node`가 있어야 한다. 빌드가 실패하면 재시작하지 말고 오류를 확인한다.
+
+ROS Humble에서 `3D display frame skipped: All fields need to have the same datatype`이
+반복되면 혼합 자료형 점군을 처리하지 못하는 이전 브리지 코드인지 확인한다.
+Humble의 `read_points_numpy()`는 XYZ만 요청해도 색상·강도 등 모든 필드의 자료형을 비교한다.
+2026-11-05 수정본은 `read_points()`로 XYZ를 이름순으로 추출해 3D 표시와 선택적 PointCloud2 거리 입력을 처리한다.
+위 절차대로 최신 패키지를 복사·재빌드하고 실행 중인 런치를 종료한 뒤 다시 실행한다.
+제조사 드라이버나 USB 고정 이름 규칙을 다시 설치할 필요는 없다.
+
+수정본은 PC에서 회귀 검사 160개와 패키지 검사 4개를 통과했다.
+ROS Humble 공식 변환 코드를 사용한 좌우 각 9,600점·빈 점군·무효 좌표·바이트 순서 검사도 통과했다.
+이 결과는 실제 Jetson 센서 재실행이나 Pi 화면 수신이 확인됐다는 의미는 아니다.
+
 서비스 구성은 기존 Pi 주소를 유지한 시작 스크립트인지 확인하고 재시작한다.
 
 ```bash

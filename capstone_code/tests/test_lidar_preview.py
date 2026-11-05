@@ -19,9 +19,15 @@ def bridge():
     path = Path(__file__).resolve().parents[1] / "jetson" / "lidar_bridge_node.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
     definitions = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))]
+    def read_points(msg, **kwargs):
+        if msg.points.dtype.names:
+            return msg.points[list(kwargs["field_names"])]
+        return np.rec.fromarrays(msg.points.reshape(-1, 3).T, names="x,y,z")
+
     ns = dict(np=np, time=time, json=json, socket=SimpleNamespace(), Node=object,
               LaserScan=object, PointCloud2=object, PREVIEW_BINS=32, SCHEMA_VERSION=1,
-              point_cloud2=SimpleNamespace(read_points_numpy=lambda msg, **kw: msg.points))
+              point_cloud2=SimpleNamespace(read_points=read_points,
+                                          read_points_numpy=lambda msg, **kw: msg.points))
     exec(compile(ast.Module(body=definitions, type_ignores=[]), str(path), "exec"), ns)
     node = ns["LidarBridge"].__new__(ns["LidarBridge"])
     node.roi_fov, node.d_min, node.d_max = 80, 0.1, 8.0
@@ -49,6 +55,19 @@ def test_cloud_preview_uses_existing_roi_and_height_filter():
     node._on_cloud("left", SimpleNamespace(points=np.array(
         [[1, 0.2, 0.5], [2, -0.3, 0], [1, 0, 2], [-1, 0, 0], [9, 0, 0]])))
     assert node.preview["left"] == [[2.0, -0.3], [1.0, 0.2]]
+
+
+def test_cloud_bridge_accepts_mixed_records_without_changing_roi_or_distance():
+    records = np.zeros(3, dtype=[("rgba", "u4"), ("z", "f4"),
+                                 ("x", "f4"), ("y", "f4")])
+    records["rgba"] = 0xffabcdef
+    records["x"], records["z"] = [1, 2, 3], [0, 2, -2]
+    node, _ = bridge()
+    node._on_cloud("left", SimpleNamespace(points=records))
+    assert node.preview["left"] == [[1.0, 0.0]]
+    assert node.side["left"][0] == 1.0
+    node._on_cloud("left", SimpleNamespace(points=records[:0]))
+    assert node.preview["left"] == [] and node.side["left"][0] is None
 
 
 def test_empty_scan_clears_previous_contour_without_reporting_sensor_failure():
