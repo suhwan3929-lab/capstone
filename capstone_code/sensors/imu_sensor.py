@@ -1,5 +1,5 @@
 """
-IMU 드라이버 (EBIMU-9DOFV6)
+IMU 드라이버 (EBMotion 무선 CH-ID 형식 / 유선 EBIMU-9DOFV6)
 
 이 모듈은 **순수 드라이버**다. 전도 판정 로직은 여기 없다 (→ tipover_monitor.py).
   * 시리얼에서 읽어 파싱한다
@@ -14,6 +14,7 @@ IMU 드라이버 (EBIMU-9DOFV6)
   [M4] 장착각 오프셋 보정
 """
 import math
+import re
 import threading
 import time
 
@@ -31,7 +32,13 @@ except ImportError:
 #: 나머지는 전부 끈다 — 켜져 있으면 필드 개수가 늘어 인덱스가 밀린다. [C6]
 SETUP_COMMANDS = ["<sof1>", "<sog1>", "<soa1>",
                   "<som0>", "<sod0>", "<sot0>", "<sots0>"]
+WIRELESS_SETUP_COMMANDS = ["<soc1>", "<sof1>", "<sog1>", "<soa1>",
+                           "<som0>", "<sod0>", "<sot0>", "<sob0>", "<sots0>"]
 EXPECTED_FIELDS = 9          # roll,pitch,yaw, gx,gy,gz, ax,ay,az
+COMMAND_TIMEOUT_SEC = 2.0
+COMMAND_SETTLE_SEC = 0.3
+_REPLY = re.compile(rb"<(ok|er|to|os)>")
+_WIRELESS_PREFIX = re.compile(r"([0-9]{1,3})-([0-9]{1,2})")
 
 _lock = threading.Lock()
 _sample = ImuSample()
@@ -104,27 +111,104 @@ def _set(**kw):
             setattr(_sample, k, v)
 
 
+def _protocol():
+    # 기존 유선 설치는 로컬 설정을 바꾸기 전까지 같은 방식으로 읽는다.
+    protocol = getattr(config, "IMU_PROTOCOL", "wired")
+    if protocol not in ("wireless", "wired"):
+        raise ValueError("IMU_PROTOCOL은 'wireless' 또는 'wired'여야 합니다")
+    return protocol
+
+
+def _wireless_identity():
+    channel = getattr(config, "IMU_CHANNEL", 100)
+    sensor_id = getattr(config, "IMU_SENSOR_ID", 0)
+    if type(channel) is not int or not 0 <= channel <= 125:
+        raise ValueError("IMU_CHANNEL은 0~125 정수여야 합니다")
+    if type(sensor_id) is not int or not 0 <= sensor_id <= 99:
+        raise ValueError("IMU_SENSOR_ID는 0~99 정수여야 합니다")
+    return channel, sensor_id
+
+
 def _parse(line: str):
     """
     EBIMU ASCII 한 줄 → float 리스트.
-    한 필드라도 숫자가 아니면 그 줄 전체를 버린다(부분 파싱은 인덱스를 밀리게 한다).
+    무선은 CH-ID를 검사한 뒤 숫자 9개만 반환한다. 유선은 '*' 접두어를 허용한다.
+    빈 필드, 추가 필드, NaN/Inf가 있으면 줄 전체를 버린다.
     """
-    line = line.strip().lstrip("*")
+    line = line.strip()
+    # 설정 응답은 줄바꿈 없이 다음 샘플 앞에 붙을 수 있다.
+    while line.startswith("<ok>"):
+        line = line[4:].lstrip()
+    line = line.lstrip("*")
     if not line:
         return []
+    tokens = line.split(",")
+    if _protocol() == "wireless":
+        prefix = _WIRELESS_PREFIX.fullmatch(tokens[0].strip())
+        if not prefix or tuple(map(int, prefix.groups())) != _wireless_identity():
+            return []
+        tokens = tokens[1:]
+    if len(tokens) != EXPECTED_FIELDS:
+        return []
     out = []
-    for tok in line.split(","):
+    for tok in tokens:
         tok = tok.strip()
         if not tok:
-            continue
+            return []
         try:
-            out.append(float(tok))
+            value = float(tok)
         except ValueError:
             return []
+        if not math.isfinite(value):
+            return []
+        out.append(value)
     return out
 
 
+def _send_command(ser, command):
+    """현재 명령의 응답을 확인한 뒤에만 다음 설정으로 진행한다."""
+    ser.reset_input_buffer()
+    ser.write(command.encode("ascii"))
+    ser.flush()
+    deadline = time.monotonic() + COMMAND_TIMEOUT_SEC
+    received = bytearray()
+    while time.monotonic() < deadline:
+        received.extend(ser.read(min(ser.in_waiting or 1, 4096)))
+        reply = _REPLY.search(received)
+        if reply:
+            if reply.group(1) != b"ok":
+                raise RuntimeError(f"설정 {command} 실패: {reply.group().decode('ascii')}")
+            _emit(f"설정 {command}: <ok>")
+            time.sleep(COMMAND_SETTLE_SEC)
+            return
+        # 샘플이 계속 들어와도 응답 검색 버퍼가 커지지 않게 한다.
+        received = received[-128:]
+    raise TimeoutError(f"설정 {command}: {COMMAND_TIMEOUT_SEC}초 동안 응답 없음")
+
+
 def _setup_sensor(ser):
+    protocol = _protocol()
+    if protocol == "wireless":
+        _wireless_identity()
+    configure = getattr(config, "IMU_CONFIGURE_ON_CONNECT", True)
+    if type(configure) is not bool:
+        raise ValueError("IMU_CONFIGURE_ON_CONNECT는 True 또는 False여야 합니다")
+    if not configure:
+        _emit("설정 명령 없이 현재 출력 수신 (숫자 9개 형식 검사)")
+        return
+    if protocol == "wireless":
+        channel, sensor_id = _wireless_identity()
+        _emit(f"무선 수신기 설정 (채널 {channel}, 센서 ID {sensor_id})")
+        previous_timeout = ser.timeout
+        ser.timeout = 0.1
+        try:
+            for command in WIRELESS_SETUP_COMMANDS:
+                _send_command(ser, command)
+            ser.reset_input_buffer()
+        finally:
+            ser.timeout = previous_timeout
+        return
+    # 유선 모델은 기존 명령과 시작 절차를 유지한다.
     for c in SETUP_COMMANDS:
         ser.write(c.encode("ascii"))
         time.sleep(0.05)
@@ -148,8 +232,8 @@ def _self_check(accel_g):
     _selfcheck_done = True
     if abs(avg - 1.0) > 0.15:
         _emit(f"⚠ 정지 상태 가속도가 {avg:.2f}g (기대값 1.00g). "
-              f"필드 순서 / 단위 / 가속도계 측정범위(FSR) 설정을 확인하세요. "
-              f"FSR이 ±2g면 임계값 {config.IMPACT_THRESHOLD_G}g에 도달할 수 없습니다.", "ERROR")
+              f"필드 순서 / 단위 / 장착 상태를 확인하세요. "
+              f"측정범위(FSR)는 제조사 설정에서 별도로 확인해야 합니다.", "ERROR")
     else:
         _emit(f"✅ 자체 진단 통과 (정지 시 {avg:.2f}g)", "INFO")
 
@@ -194,9 +278,9 @@ def _read_loop(ser):
     bad_lines = 0
     while _running:
         raw = ser.readline()
-        if not raw:
+        if not raw or not raw.endswith(b"\n"):
             continue                       # 타임아웃. status는 snapshot()이 강등한다
-        parsed = _parse(raw.decode("utf-8", errors="ignore"))
+        parsed = _parse(raw.decode("ascii", errors="replace"))
 
         # [C6] '이하 배제'가 아니라 '정확히 9개'. 필드가 늘면 인덱스가 밀린다.
         if len(parsed) != EXPECTED_FIELDS:
@@ -241,9 +325,10 @@ def run_integrity_check(log_callback=None) -> bool:
             with serial.Serial(config.IMU_PORT, config.IMU_BAUD,
                                timeout=1, dsrdtr=False) as ser:
                 _setup_sensor(ser)
-                t_end = time.time() + 2.0
-                while time.time() < t_end:
-                    if len(_parse(ser.readline().decode("utf-8", "ignore"))) == EXPECTED_FIELDS:
+                t_end = time.monotonic() + 2.0
+                while time.monotonic() < t_end:
+                    raw = ser.readline()
+                    if raw.endswith(b"\n") and len(_parse(raw.decode("ascii", "replace"))) == EXPECTED_FIELDS:
                         _emit(f"✅ 유효 데이터 수신 확인 ({config.IMU_PORT})", "INFO")
                         return True
                 _emit(f"포트는 열렸으나 유효 데이터 없음 ({attempt}/3)", "WARN")
