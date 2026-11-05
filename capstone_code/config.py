@@ -344,6 +344,11 @@ LOG_DIR = "logs"
 CSV_ENABLED = True         # 임계값 실험 데이터 수집. 항상 켜둘 것.
 CSV_FLUSH_EVERY = 200      # 2초마다 디스크 반영 (전원 차단 대비)
 
+# 지도 서비스 변경 시 해당 서비스의 표시 문구와 이용 조건도 함께 확인한다.
+MAP_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+MAP_ATTRIBUTION = "© OpenStreetMap contributors"
+MAP_CACHE_PATH = os.path.join(os.path.expanduser("~"), ".cache", "walker-safety", "map-tiles.sqlite3")
+
 # ── 개인 설정 덮어쓰기 (반드시 파일 맨 끝) ──────────────
 try:
     from config_local import *  # noqa: F401,F403
