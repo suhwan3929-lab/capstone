@@ -85,9 +85,26 @@ def test_preview_coordinate_profiles_match_forward_left_up():
     assert np.array_equal(normalize_xyz([[-.2, .4, 1]], "ros_optical"), [[1, .2, -.4]])
     assert project_xyz((1, .5, .2), "top")[:2] == (-.5, -1)
     assert project_xyz((1, .5, .2), "side")[:2] == (1, -.2)
-    assert project_xyz((1, .5, .2), "front") == (-.5, -.2, 1)
-    assert project_xyz((1.8, .5, .2), "front")[:2] == (-.5, -.2)
+    assert project_xyz((1, .5, .2), "front") == (.5, -.2, 1)
+    assert project_xyz((1.8, .5, .2), "front")[:2] == (.5, -.2)
     assert height_color(-.5) != height_color(.5)
+
+
+def test_front_canvas_mirrors_horizontal_movement_and_keeps_height():
+    view = Lidar3DPreview.__new__(Lidar3DPreview)
+    for name in ("delete", "create_text", "create_line", "create_oval"):
+        setattr(view, name, Mock())
+    view.winfo_width, view.winfo_height = lambda: 480, lambda: 330
+    view.view = "front"
+    positions = []
+    for point in ((1, 0, 0), (1, .15, .1), (1, -.15, -.1)):
+        view._snapshot = PreviewSnapshot((point,), "live", False)
+        view._draw()
+        x1, y1, x2, y2 = view.create_oval.call_args.args
+        positions.append(((x1 + x2) / 2, (y1 + y2) / 2))
+    center, positive_y, negative_y = positions
+    assert positive_y[0] > center[0] > negative_y[0]
+    assert positive_y[1] < center[1] < negative_y[1]
 
 
 def test_preview_receiver_stale_empty_and_independent_sensors():

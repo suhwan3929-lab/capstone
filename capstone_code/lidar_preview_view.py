@@ -20,7 +20,8 @@ DISPLAY_ZOOM = 5.0
 def project_xyz(point, view="front"):
     x, y, z = point
     if view == "front":
-        return -y, -z, x
+        # Mirror horizontal movement in the front display.
+        return y, -z, x
     if view == "top":
         return -y, -x, z
     if view == "side":
